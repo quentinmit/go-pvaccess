@@ -39,6 +39,28 @@ func TestPVEncode(t *testing.T) {
 		{PVBoolean(false), []byte{0}, nil},
 		{true, []byte{1}, nil},
 		{false, []byte{0}, nil},
+		{PVByte(0), []byte{0}, nil},
+		{PVByte(-1), []byte{0xFF}, nil},
+		{int8(127), []byte{0x7F}, nil},
+		{PVUByte(0), []byte{0}, nil},
+		{PVUByte(129), []byte{129}, nil},
+		{byte(13), []byte{13}, nil},
+		{PVShort(256), []byte{1, 0}, nil},
+		{PVShort(-1), []byte{0xff, 0xff}, nil},
+		{int16(32), []byte{0, 32}, nil},
+		{PVUShort(32768), []byte{0x80, 0x00}, nil},
+		{uint16(32768), []byte{0x80, 0x00}, nil},
+		{PVInt(65536), []byte{0, 1, 0, 0}, nil},
+		{PVInt(-1), []byte{0xff, 0xff, 0xff, 0xff}, nil},
+		{int32(32), []byte{0, 0, 0, 32}, nil},
+		{PVUInt(0x80000000), []byte{0x80, 0, 0, 0}, nil},
+		{uint32(1), []byte{0, 0, 0, 1}, nil},
+		{PVLong(-1), []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, nil},
+		{int64(1), []byte{0, 0, 0, 0, 0, 0, 0, 1}, nil},
+		{PVULong(0x8000000000000000), []byte{0x80, 0, 0, 0, 0, 0, 0, 0}, nil},
+		{uint64(13), []byte{0, 0, 0, 0, 0, 0, 0, 13}, nil},
+		{float32(85.125), []byte{0x42, 0xAA, 0x40, 0x00}, nil},
+		{float64(85.125), []byte{0x40, 0x55, 0x48, 0, 0, 0, 0, 0}, nil},
 	}
 	for _, test := range tests {
 		name := fmt.Sprintf("%T: %#v", test.in, test.in)
@@ -54,7 +76,10 @@ func TestPVEncode(t *testing.T) {
 				t.Fatalf("got instance of %T, expected conversion failure", pvf)
 			}
 			if test.wantLE == nil {
-				test.wantLE = test.wantBE
+				test.wantLE = make([]byte, len(test.wantBE))
+				for i := 0; i < len(test.wantBE); i++ {
+					test.wantLE[i] = test.wantBE[len(test.wantBE)-1-i]
+				}
 			}
 			for _, byteOrder := range []struct {
 				byteOrder binary.ByteOrder

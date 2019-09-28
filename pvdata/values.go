@@ -293,36 +293,31 @@ func valueToPVField(v reflect.Value) PVField {
 		if i, ok := i.(PVField); ok {
 			return i
 		}
-		var pvft interface{}
 		switch i := i.(type) {
 		case *bool:
-			pvft = PVBoolean(*i)
+			return (*PVBoolean)(i)
 		case *int8:
-			pvft = PVByte(*i)
+			return (*PVByte)(i)
 		case *uint8:
-			pvft = PVUByte(*i)
+			return (*PVUByte)(i)
 		case *int16:
-			pvft = PVShort(*i)
+			return (*PVShort)(i)
 		case *uint16:
-			pvft = PVUShort(*i)
+			return (*PVUShort)(i)
 		case *int32:
-			pvft = PVInt(*i)
+			return (*PVInt)(i)
 		case *uint32:
-			pvft = PVUInt(*i)
+			return (*PVUInt)(i)
 		case *int64:
-			pvft = PVLong(*i)
+			return (*PVLong)(i)
 		case *uint64:
-			pvft = PVULong(*i)
+			return (*PVULong)(i)
 		case *float32:
-			pvft = PVFloat(*i)
+			return (*PVFloat)(i)
 		case *float64:
-			pvft = PVDouble(*i)
+			return (*PVDouble)(i)
 		case *string:
-			pvft = PVString(*i)
-		}
-		if pvft != nil {
-			// We can't just return pvft, we need to convert the existing value so it still points to the same place.
-			return v.Convert(reflect.PtrTo(reflect.TypeOf(pvft))).Interface().(PVField)
+			return (*PVString)(i)
 		}
 	}
 	if v.Kind() == reflect.Slice {
