@@ -64,12 +64,17 @@ func TestRoundTrip(t *testing.T) {
 		{uint64(13), []byte{0, 0, 0, 0, 0, 0, 0, 13}, []byte{}},
 		{float32(85.125), []byte{0x42, 0xAA, 0x40, 0x00}, []byte{}},
 		{float64(85.125), []byte{0x40, 0x55, 0x48, 0, 0, 0, 0, 0}, []byte{}},
-		{[]PVBoolean{true, false, false}, []byte{3, 1, 0, 0}, []byte{3, 1, 0, 0}},
+		{[]PVBoolean{true, false, false}, []byte{3, 1, 0, 0}, nil},
+		{[3]PVBoolean{true, false, false}, []byte{1, 0, 0}, nil},
 		{NewPVFixedArray(&[]bool{false, true, true}), []byte{0, 1, 1}, nil},
 		{PVString("33"), []byte{2, 0x33, 0x33}, nil},
 		{string254, append([]byte{254, 0, 0, 0, 254}, []byte(string254)...), append([]byte{254, 254, 0, 0, 0}, []byte(string254)...)},
 		{PVStatus{PVStatus_OK, "", ""}, []byte{0xFF}, nil},
 		{PVStatus{PVStatus_FATAL, "3", "2"}, []byte{3, 1, 0x33, 1, 0x32}, nil},
+		{struct {
+			Code    byte
+			Message string
+		}{15, "yes"}, []byte{15, 3, 'y', 'e', 's'}, nil},
 	}
 	for _, test := range tests {
 		name := fmt.Sprintf("%T: %#v", test.in, test.in)

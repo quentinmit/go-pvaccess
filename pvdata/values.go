@@ -328,8 +328,15 @@ func valueToPVField(v reflect.Value) PVField {
 			return (*PVString)(i)
 		}
 	}
-	if v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Slice {
-		return PVArray{false, v.Elem()}
+	if v.Kind() == reflect.Ptr {
+		switch v.Elem().Kind() {
+		case reflect.Slice:
+			return PVArray{false, v.Elem()}
+		case reflect.Array:
+			return PVArray{true, v.Elem()}
+		case reflect.Struct:
+			return PVStructure{v.Elem()}
+		}
 	}
 	return nil
 }
@@ -358,7 +365,7 @@ func (a PVArray) PVEncode(s *EncoderState) error {
 		item := a.v.Index(i).Addr()
 		pvf := valueToPVField(item)
 		if pvf == nil {
-			return fmt.Errorf("don't know how to encode %v", item.Interface())
+			return fmt.Errorf("don't know how to encode %#v", item.Interface())
 		}
 		if err := pvf.PVEncode(s); err != nil {
 			return err
@@ -386,7 +393,7 @@ func (a PVArray) PVDecode(s *DecoderState) error {
 		item := a.v.Index(i).Addr()
 		pvf := valueToPVField(item)
 		if pvf == nil {
-			return fmt.Errorf("don't know how to decode %v", item.Interface())
+			return fmt.Errorf("don't know how to decode %#v", item.Interface())
 		}
 		if err := pvf.PVDecode(s); err != nil {
 			return err
@@ -430,13 +437,51 @@ func (v *PVString) PVDecode(s *DecoderState) error {
 
 // Structure types
 
-// TODO: Encoded as all of their fields in order.
+type PVStructure struct {
+	v reflect.Value
+}
+
+// TODO: Support bitfields for partial pack/unpack
+func (v PVStructure) PVEncode(s *EncoderState) error {
+	for i := 0; i < v.v.NumField(); i++ {
+		item := v.v.Field(i).Addr()
+		pvf := valueToPVField(item)
+		if pvf == nil {
+			return fmt.Errorf("don't know how to encode %#v", item.Interface())
+		}
+		if err := pvf.PVEncode(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (v PVStructure) PVDecode(s *DecoderState) error {
+	if !v.v.IsValid() {
+		return errors.New("zero PVStructure is not usable")
+	}
+	for i := 0; i < v.v.NumField(); i++ {
+		item := v.v.Field(i).Addr()
+		pvf := valueToPVField(item)
+		if pvf == nil {
+			return fmt.Errorf("don't know how to decode %#v", item.Interface())
+		}
+		if err := pvf.PVDecode(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Union types
 
 // TODO: Regular union is selector value encoded as size, followed by data
 
 // TODO: Variant union is a field description, followed by data
+
+type PVAny struct {
+	Field Field
+	Data  PVField
+}
 
 // BitSet type
 
@@ -491,5 +536,18 @@ const (
 	FULL_WITH_ID_TYPE_CODE   = 0xFD
 	FULL_TAGGED_ID_TYPE_CODE = 0xFC
 )
+
+type StructFieldDesc struct {
+	Name  string
+	Field Field
+}
+
+type Field struct {
+	TypeCode int
+	ID       string
+	Tag      PVInt // FIXME: Figure out size of tag
+	Size     PVSize
+	Fields   []StructFieldDesc
+}
 
 // TODO: Parse these

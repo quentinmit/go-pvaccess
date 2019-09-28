@@ -54,3 +54,14 @@ func (v *pvAccessHeader) PVDecode(s *EncoderState) error {
 	}
 	return v.PayloadSize.PVDecode(s)
 }
+
+type beaconMessage struct {
+	GUID             [12]byte
+	Flags            byte
+	BeaconSequenceID byte
+	ChangeCount      int16
+	ServerAddress    [16]byte
+	ServerPort       uint16
+	Protocol         string
+	ServerStatus     PVAny
+}
