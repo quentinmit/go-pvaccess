@@ -65,6 +65,7 @@ func TestRoundTrip(t *testing.T) {
 		{float32(85.125), []byte{0x42, 0xAA, 0x40, 0x00}, []byte{}},
 		{float64(85.125), []byte{0x40, 0x55, 0x48, 0, 0, 0, 0, 0}, []byte{}},
 		{[]PVBoolean{true, false, false}, []byte{3, 1, 0, 0}, []byte{3, 1, 0, 0}},
+		{NewPVFixedArray(&[]bool{false, true, true}), []byte{0, 1, 1}, nil},
 		{PVString("33"), []byte{2, 0x33, 0x33}, nil},
 		{string254, append([]byte{254, 0, 0, 0, 254}, []byte(string254)...), append([]byte{254, 254, 0, 0, 0}, []byte(string254)...)},
 		{PVStatus{PVStatus_OK, "", ""}, []byte{0xFF}, nil},
@@ -117,10 +118,16 @@ func TestRoundTrip(t *testing.T) {
 					}
 					out := reflect.New(reflect.TypeOf(test.in))
 					opvf := valueToPVField(out)
+					out = out.Elem()
+					if in, ok := test.in.(PVArray); ok {
+						pva := PVArray{in.fixed, reflect.MakeSlice(in.v.Type(), in.v.Len(), in.v.Len())}
+						out = reflect.ValueOf(pva)
+						opvf = PVField(pva)
+					}
 					if err := opvf.PVDecode(ds); err != nil {
 						t.Errorf("unexpected decode error: %v", err)
 					}
-					if diff := cmp.Diff(out.Elem().Interface(), test.in); diff != "" {
+					if diff := cmp.Diff(out.Interface(), test.in); diff != "" {
 						t.Errorf("decode failed. got(-)/want(+)\n%s", diff)
 					}
 				})

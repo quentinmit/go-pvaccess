@@ -2,10 +2,13 @@ package pvdata
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"reflect"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 const max8 = 254
@@ -326,23 +329,33 @@ func valueToPVField(v reflect.Value) PVField {
 		}
 	}
 	if v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Slice {
-		return pvArray{v}
+		return PVArray{false, v.Elem()}
 	}
 	return nil
 }
 
 // TODO: Export this.
 
-type pvArray struct {
-	reflect.Value
+type PVArray struct {
+	fixed bool
+	v     reflect.Value
 }
 
-func (v pvArray) PVEncode(s *EncoderState) error {
-	if err := PVSize(v.Elem().Len()).PVEncode(s); err != nil {
-		return err
+func NewPVFixedArray(slicePtr interface{}) PVArray {
+	return PVArray{
+		true,
+		reflect.ValueOf(slicePtr).Elem(),
 	}
-	for i := 0; i < v.Elem().Len(); i++ {
-		item := v.Elem().Index(i).Addr()
+}
+
+func (a PVArray) PVEncode(s *EncoderState) error {
+	if !a.fixed {
+		if err := PVSize(a.v.Len()).PVEncode(s); err != nil {
+			return err
+		}
+	}
+	for i := 0; i < a.v.Len(); i++ {
+		item := a.v.Index(i).Addr()
 		pvf := valueToPVField(item)
 		if pvf == nil {
 			return fmt.Errorf("don't know how to encode %v", item.Interface())
@@ -353,17 +366,24 @@ func (v pvArray) PVEncode(s *EncoderState) error {
 	}
 	return nil
 }
-func (v pvArray) PVDecode(s *DecoderState) error {
+func (a PVArray) PVDecode(s *DecoderState) error {
+	if !a.v.IsValid() {
+		return errors.New("zero PVArray is not usable")
+	}
 	var size PVSize
-	if err := size.PVDecode(s); err != nil {
-		return err
+	if a.fixed {
+		size = PVSize(a.v.Len())
+	} else {
+		if err := size.PVDecode(s); err != nil {
+			return err
+		}
+		if a.v.Cap() < int(size) {
+			a.v.Set(reflect.MakeSlice(a.v.Type(), int(size), int(size)))
+		}
+		a.v.SetLen(int(size))
 	}
-	if v.Elem().Cap() < int(size) {
-		v.Elem().Set(reflect.MakeSlice(v.Elem().Type(), int(size), int(size)))
-	}
-	v.Elem().SetLen(int(size))
 	for i := 0; i < int(size); i++ {
-		item := v.Elem().Index(i).Addr()
+		item := a.v.Index(i).Addr()
 		pvf := valueToPVField(item)
 		if pvf == nil {
 			return fmt.Errorf("don't know how to decode %v", item.Interface())
@@ -373,6 +393,12 @@ func (v pvArray) PVDecode(s *DecoderState) error {
 		}
 	}
 	return nil
+}
+func (a PVArray) Equal(b PVArray) bool {
+	if a.fixed == b.fixed && a.v.IsValid() && b.v.IsValid() {
+		return cmp.Equal(a.v.Interface(), b.v.Interface())
+	}
+	return false
 }
 
 // TODO: Structure arrays have an extra boolean before each element to indicate if they are null.
