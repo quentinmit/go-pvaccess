@@ -341,6 +341,23 @@ func valueToPVField(v reflect.Value) PVField {
 	return nil
 }
 
+func encode(s *EncoderState, vs ...interface{}) error {
+	for _, v := range vs {
+		if err := valueToPVField(reflect.ValueOf(v)).PVEncode(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func decode(s *DecoderState, vs ...interface{}) error {
+	for _, v := range vs {
+		if err := valueToPVField(reflect.ValueOf(v)).PVDecode(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // TODO: Export this.
 
 type PVArray struct {
@@ -543,11 +560,126 @@ type StructFieldDesc struct {
 }
 
 type Field struct {
-	TypeCode int
-	ID       string
-	Tag      PVInt // FIXME: Figure out size of tag
-	Size     PVSize
-	Fields   []StructFieldDesc
+	// TypeCode represents the real FieldDesc, or NULL_TYPE_CODE
+	// The other special codes will be inferred from HasID, HasTag
+	TypeCode      byte
+	HasID, HasTag bool
+	ID            PVString
+	Tag           PVInt // FIXME: Figure out size of tag
+	Size          PVSize
+	Fields        []StructFieldDesc
 }
 
-// TODO: Parse these
+const (
+	BOOLEAN = 0x00
+	BYTE    = 0x20
+	SHORT   = 0x21
+	INT     = 0x22
+	LONG    = 0x23
+	UBYTE   = 0x24
+	USHORT  = 0x25
+	UINT    = 0x26
+	ULONG   = 0x27
+	FLOAT   = 0x42
+	DOUBLE  = 0x43
+	STRING  = 0x60
+
+	ARRAY          = 0x10
+	BOUNDED_STRING = 0x86
+	STRUCT         = 0x80
+	UNION          = 0x81
+	STRUCT_ARRAY   = STRUCT | ARRAY
+	UNION_ARRAY    = UNION | ARRAY
+)
+
+func (f *Field) PVEncode(s *EncoderState) error {
+	if f.HasID && f.HasTag {
+		if err := s.Buf.WriteByte(FULL_TAGGED_ID_TYPE_CODE); err != nil {
+			return err
+		}
+		if err := f.ID.PVEncode(s); err != nil {
+			return err
+		}
+		if err := f.Tag.PVEncode(s); err != nil {
+			return err
+		}
+	} else if f.HasID {
+		if f.TypeCode == NULL_TYPE_CODE {
+			if err := s.Buf.WriteByte(ONLY_ID_TYPE_CODE); err != nil {
+				return err
+			}
+			return f.ID.PVEncode(s)
+		}
+		s.Buf.WriteByte(FULL_WITH_ID_TYPE_CODE)
+		if err := f.ID.PVEncode(s); err != nil {
+			return err
+		}
+	}
+	if err := s.Buf.WriteByte(f.TypeCode); err != nil {
+		return err
+	}
+	if f.TypeCode&ARRAY == ARRAY || f.TypeCode == BOUNDED_STRING {
+		if err := f.Size.PVEncode(s); err != nil {
+			return err
+		}
+	}
+	if f.TypeCode == STRUCT || f.TypeCode == UNION {
+		// TODO: Is this the same as the top-level ID?
+		if err := encode(s, f.ID, f.Fields); err != nil {
+			return err
+		}
+	}
+	// TODO: Serialize STRUCT_ARRAY and UNION_ARRAY types
+	return nil
+}
+
+func (f *Field) PVDecode(s *DecoderState) error {
+	typeCode, err := s.Buf.ReadByte()
+	if err != nil {
+		return err
+	}
+	f.TypeCode = typeCode
+	switch f.TypeCode {
+	case ONLY_ID_TYPE_CODE:
+		f.HasID = true
+		f.TypeCode = NULL_TYPE_CODE
+		return nil
+	case FULL_WITH_ID_TYPE_CODE:
+		f.HasID = true
+	case FULL_TAGGED_ID_TYPE_CODE:
+		f.HasID = true
+		f.HasTag = true
+	}
+	if f.HasID {
+		if err := f.ID.PVDecode(s); err != nil {
+			return err
+		}
+	}
+	if f.HasTag {
+		if err := f.Tag.PVDecode(s); err != nil {
+			return err
+		}
+	}
+	switch f.TypeCode {
+	case FULL_WITH_ID_TYPE_CODE, FULL_TAGGED_ID_TYPE_CODE:
+		typeCode, err = s.Buf.ReadByte()
+		if err != nil {
+			return err
+		}
+		f.TypeCode = typeCode
+	}
+	if f.TypeCode&ARRAY == ARRAY || f.TypeCode == BOUNDED_STRING {
+		if err := f.Size.PVDecode(s); err != nil {
+			return err
+		}
+	}
+	if f.TypeCode == STRUCT || f.TypeCode == UNION {
+		// TODO: Is this the same as the top-level ID?
+		if err := decode(s, f.ID, f.Fields); err != nil {
+			return err
+		}
+
+	}
+	// TODO: Deserialize STRUCT_ARRAY and UNION_ARRAY types
+	return nil
+}
