@@ -45,22 +45,23 @@ func TestPVEncode(t *testing.T) {
 		{PVUByte(0), []byte{0}, nil},
 		{PVUByte(129), []byte{129}, nil},
 		{byte(13), []byte{13}, nil},
-		{PVShort(256), []byte{1, 0}, nil},
-		{PVShort(-1), []byte{0xff, 0xff}, nil},
-		{int16(32), []byte{0, 32}, nil},
-		{PVUShort(32768), []byte{0x80, 0x00}, nil},
-		{uint16(32768), []byte{0x80, 0x00}, nil},
-		{PVInt(65536), []byte{0, 1, 0, 0}, nil},
-		{PVInt(-1), []byte{0xff, 0xff, 0xff, 0xff}, nil},
-		{int32(32), []byte{0, 0, 0, 32}, nil},
-		{PVUInt(0x80000000), []byte{0x80, 0, 0, 0}, nil},
-		{uint32(1), []byte{0, 0, 0, 1}, nil},
+		{PVShort(256), []byte{1, 0}, []byte{}},
+		{PVShort(-1), []byte{0xff, 0xff}, []byte{}},
+		{int16(32), []byte{0, 32}, []byte{}},
+		{PVUShort(32768), []byte{0x80, 0x00}, []byte{}},
+		{uint16(32768), []byte{0x80, 0x00}, []byte{}},
+		{PVInt(65536), []byte{0, 1, 0, 0}, []byte{}},
+		{PVInt(-1), []byte{0xff, 0xff, 0xff, 0xff}, []byte{}},
+		{int32(32), []byte{0, 0, 0, 32}, []byte{}},
+		{PVUInt(0x80000000), []byte{0x80, 0, 0, 0}, []byte{}},
+		{uint32(1), []byte{0, 0, 0, 1}, []byte{}},
 		{PVLong(-1), []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, nil},
-		{int64(1), []byte{0, 0, 0, 0, 0, 0, 0, 1}, nil},
-		{PVULong(0x8000000000000000), []byte{0x80, 0, 0, 0, 0, 0, 0, 0}, nil},
-		{uint64(13), []byte{0, 0, 0, 0, 0, 0, 0, 13}, nil},
-		{float32(85.125), []byte{0x42, 0xAA, 0x40, 0x00}, nil},
-		{float64(85.125), []byte{0x40, 0x55, 0x48, 0, 0, 0, 0, 0}, nil},
+		{int64(1), []byte{0, 0, 0, 0, 0, 0, 0, 1}, []byte{}},
+		{PVULong(0x8000000000000000), []byte{0x80, 0, 0, 0, 0, 0, 0, 0}, []byte{}},
+		{uint64(13), []byte{0, 0, 0, 0, 0, 0, 0, 13}, []byte{}},
+		{float32(85.125), []byte{0x42, 0xAA, 0x40, 0x00}, []byte{}},
+		{float64(85.125), []byte{0x40, 0x55, 0x48, 0, 0, 0, 0, 0}, []byte{}},
+		//{[]PVBoolean{true, false, false}, []byte{3, 1, 0, 0}, []byte{3, 1, 0, 0}},
 	}
 	for _, test := range tests {
 		name := fmt.Sprintf("%T: %#v", test.in, test.in)
@@ -76,6 +77,8 @@ func TestPVEncode(t *testing.T) {
 				t.Fatalf("got instance of %T, expected conversion failure", pvf)
 			}
 			if test.wantLE == nil {
+				test.wantLE = test.wantBE
+			} else if len(test.wantLE) == 0 {
 				test.wantLE = make([]byte, len(test.wantBE))
 				for i := 0; i < len(test.wantBE); i++ {
 					test.wantLE[i] = test.wantBE[len(test.wantBE)-1-i]

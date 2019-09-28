@@ -320,7 +320,7 @@ func valueToPVField(v reflect.Value) PVField {
 			return (*PVString)(i)
 		}
 	}
-	if v.Kind() == reflect.Slice {
+	if v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Slice {
 		return pvArray{v}
 	}
 	return nil
@@ -333,11 +333,11 @@ type pvArray struct {
 }
 
 func (v pvArray) PVEncode(s *EncoderState) error {
-	if err := PVSize(v.Len()).PVEncode(s); err != nil {
+	if err := PVSize(v.Elem().Len()).PVEncode(s); err != nil {
 		return err
 	}
-	for i := 0; i < v.Len(); i++ {
-		if err := valueToPVField(v.Index(i)).PVEncode(s); err != nil {
+	for i := 0; i < v.Elem().Len(); i++ {
+		if err := valueToPVField(v.Elem().Index(i)).PVEncode(s); err != nil {
 			return err
 		}
 	}
@@ -348,12 +348,12 @@ func (v pvArray) PVDecode(s *DecoderState) error {
 	if err := size.PVDecode(s); err != nil {
 		return err
 	}
-	if v.Cap() < int(size) {
-		v.Set(reflect.MakeSlice(v.Type(), int(size), int(size)))
+	if v.Elem().Cap() < int(size) {
+		v.Elem().Set(reflect.MakeSlice(v.Type(), int(size), int(size)))
 	}
-	v.SetLen(int(size))
+	v.Elem().SetLen(int(size))
 	for i := 0; i < int(size); i++ {
-		if err := valueToPVField(v.Index(i)).PVDecode(s); err != nil {
+		if err := valueToPVField(v.Elem().Index(i)).PVDecode(s); err != nil {
 			return err
 		}
 	}
