@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -25,6 +26,8 @@ func TestPVSize(t *testing.T) {
 		t.Errorf("bytes = %v, want [0]", bytes)
 	}
 }
+
+var string254 = strings.Repeat("3", 254)
 
 func TestPVEncode(t *testing.T) {
 	tests := []struct {
@@ -62,6 +65,10 @@ func TestPVEncode(t *testing.T) {
 		{float32(85.125), []byte{0x42, 0xAA, 0x40, 0x00}, []byte{}},
 		{float64(85.125), []byte{0x40, 0x55, 0x48, 0, 0, 0, 0, 0}, []byte{}},
 		{[]PVBoolean{true, false, false}, []byte{3, 1, 0, 0}, []byte{3, 1, 0, 0}},
+		{PVString("33"), []byte{2, 0x33, 0x33}, nil},
+		{string254, append([]byte{254, 0, 0, 0, 254}, []byte(string254)...), append([]byte{254, 254, 0, 0, 0}, []byte(string254)...)},
+		{PVStatus{PVStatus_OK, "", ""}, []byte{0xFF}, nil},
+		{PVStatus{PVStatus_FATAL, "3", "2"}, []byte{3, 1, 0x33, 1, 0x32}, nil},
 	}
 	for _, test := range tests {
 		name := fmt.Sprintf("%T: %#v", test.in, test.in)
