@@ -61,7 +61,7 @@ func TestPVEncode(t *testing.T) {
 		{uint64(13), []byte{0, 0, 0, 0, 0, 0, 0, 13}, []byte{}},
 		{float32(85.125), []byte{0x42, 0xAA, 0x40, 0x00}, []byte{}},
 		{float64(85.125), []byte{0x40, 0x55, 0x48, 0, 0, 0, 0, 0}, []byte{}},
-		//{[]PVBoolean{true, false, false}, []byte{3, 1, 0, 0}, []byte{3, 1, 0, 0}},
+		{[]PVBoolean{true, false, false}, []byte{3, 1, 0, 0}, []byte{3, 1, 0, 0}},
 	}
 	for _, test := range tests {
 		name := fmt.Sprintf("%T: %#v", test.in, test.in)

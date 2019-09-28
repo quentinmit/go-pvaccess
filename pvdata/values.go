@@ -3,6 +3,7 @@ package pvdata
 import (
 	"bufio"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math"
 	"reflect"
@@ -337,7 +338,12 @@ func (v pvArray) PVEncode(s *EncoderState) error {
 		return err
 	}
 	for i := 0; i < v.Elem().Len(); i++ {
-		if err := valueToPVField(v.Elem().Index(i)).PVEncode(s); err != nil {
+		item := v.Elem().Index(i).Addr()
+		pvf := valueToPVField(item)
+		if pvf == nil {
+			return fmt.Errorf("don't know how to encode %v", item.Interface())
+		}
+		if err := pvf.PVEncode(s); err != nil {
 			return err
 		}
 	}
