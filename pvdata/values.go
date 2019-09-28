@@ -152,6 +152,9 @@ func (v *PVBoolean) PVDecode(s *DecoderState) error {
 	*v = (data != 0)
 	return nil
 }
+func (PVBoolean) Field() Field {
+	return Field{TypeCode: BOOLEAN}
+}
 
 type PVByte int8
 
@@ -165,6 +168,9 @@ func (v *PVByte) PVDecode(s *DecoderState) error {
 	}
 	*v = PVByte(data)
 	return nil
+}
+func (PVByte) Field() Field {
+	return Field{TypeCode: BYTE}
 }
 
 type PVUByte uint8
@@ -180,6 +186,9 @@ func (v *PVUByte) PVDecode(s *DecoderState) error {
 	*v = PVUByte(data)
 	return nil
 }
+func (PVUByte) Field() Field {
+	return Field{TypeCode: UBYTE}
+}
 
 type PVShort int16
 
@@ -193,6 +202,9 @@ func (v *PVShort) PVDecode(s *DecoderState) error {
 	}
 	*v = PVShort(data)
 	return nil
+}
+func (PVShort) Field() Field {
+	return Field{TypeCode: SHORT}
 }
 
 type PVUShort uint16
@@ -208,6 +220,9 @@ func (v *PVUShort) PVDecode(s *DecoderState) error {
 	*v = PVUShort(data)
 	return nil
 }
+func (PVUShort) Field() Field {
+	return Field{TypeCode: USHORT}
+}
 
 type PVInt int32
 
@@ -221,6 +236,9 @@ func (v *PVInt) PVDecode(s *DecoderState) error {
 	}
 	*v = PVInt(data)
 	return nil
+}
+func (PVInt) Field() Field {
+	return Field{TypeCode: INT}
 }
 
 type PVUInt uint32
@@ -236,6 +254,9 @@ func (v *PVUInt) PVDecode(s *DecoderState) error {
 	*v = PVUInt(data)
 	return nil
 }
+func (PVUInt) Field() Field {
+	return Field{TypeCode: UINT}
+}
 
 type PVLong int64
 
@@ -249,6 +270,9 @@ func (v *PVLong) PVDecode(s *DecoderState) error {
 	}
 	*v = PVLong(data)
 	return nil
+}
+func (PVLong) Field() Field {
+	return Field{TypeCode: LONG}
 }
 
 type PVULong uint64
@@ -264,6 +288,9 @@ func (v *PVULong) PVDecode(s *DecoderState) error {
 	*v = PVULong(data)
 	return nil
 }
+func (PVULong) Field() Field {
+	return Field{TypeCode: ULONG}
+}
 
 type PVFloat float32
 
@@ -277,6 +304,9 @@ func (v *PVFloat) PVDecode(s *DecoderState) error {
 	}
 	*v = PVFloat(math.Float32frombits(data))
 	return nil
+}
+func (PVFloat) Field() Field {
+	return Field{TypeCode: FLOAT}
 }
 
 type PVDouble float64
@@ -292,73 +322,11 @@ func (v *PVDouble) PVDecode(s *DecoderState) error {
 	*v = PVDouble(math.Float64frombits(data))
 	return nil
 }
+func (PVDouble) Field() Field {
+	return Field{TypeCode: DOUBLE}
+}
 
 // Arrays
-
-func valueToPVField(v reflect.Value) PVField {
-	if v.CanInterface() {
-		i := v.Interface()
-		if i, ok := i.(PVField); ok {
-			return i
-		}
-		switch i := i.(type) {
-		case *bool:
-			return (*PVBoolean)(i)
-		case *int8:
-			return (*PVByte)(i)
-		case *uint8:
-			return (*PVUByte)(i)
-		case *int16:
-			return (*PVShort)(i)
-		case *uint16:
-			return (*PVUShort)(i)
-		case *int32:
-			return (*PVInt)(i)
-		case *uint32:
-			return (*PVUInt)(i)
-		case *int64:
-			return (*PVLong)(i)
-		case *uint64:
-			return (*PVULong)(i)
-		case *float32:
-			return (*PVFloat)(i)
-		case *float64:
-			return (*PVDouble)(i)
-		case *string:
-			return (*PVString)(i)
-		}
-	}
-	if v.Kind() == reflect.Ptr {
-		switch v.Elem().Kind() {
-		case reflect.Slice:
-			return PVArray{false, v.Elem()}
-		case reflect.Array:
-			return PVArray{true, v.Elem()}
-		case reflect.Struct:
-			return PVStructure{v.Elem()}
-		}
-	}
-	return nil
-}
-
-func encode(s *EncoderState, vs ...interface{}) error {
-	for _, v := range vs {
-		if err := valueToPVField(reflect.ValueOf(v)).PVEncode(s); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-func decode(s *DecoderState, vs ...interface{}) error {
-	for _, v := range vs {
-		if err := valueToPVField(reflect.ValueOf(v)).PVDecode(s); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// TODO: Export this.
 
 type PVArray struct {
 	fixed bool
