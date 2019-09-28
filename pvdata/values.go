@@ -1,7 +1,6 @@
 package pvdata
 
 import (
-	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -43,8 +42,13 @@ func (s *EncoderState) WriteUint64(v uint64) error {
 	return check(s.Buf.Write(bytes))
 }
 
+type Reader interface {
+	io.Reader
+	io.ByteReader
+}
+
 type DecoderState struct {
-	Buf       *bufio.Reader
+	Buf       Reader
 	ByteOrder binary.ByteOrder
 }
 
@@ -355,11 +359,16 @@ func (v pvArray) PVDecode(s *DecoderState) error {
 		return err
 	}
 	if v.Elem().Cap() < int(size) {
-		v.Elem().Set(reflect.MakeSlice(v.Type(), int(size), int(size)))
+		v.Elem().Set(reflect.MakeSlice(v.Elem().Type(), int(size), int(size)))
 	}
 	v.Elem().SetLen(int(size))
 	for i := 0; i < int(size); i++ {
-		if err := valueToPVField(v.Elem().Index(i)).PVDecode(s); err != nil {
+		item := v.Elem().Index(i).Addr()
+		pvf := valueToPVField(item)
+		if pvf == nil {
+			return fmt.Errorf("don't know how to decode %v", item.Interface())
+		}
+		if err := pvf.PVDecode(s); err != nil {
 			return err
 		}
 	}

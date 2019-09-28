@@ -29,7 +29,7 @@ func TestPVSize(t *testing.T) {
 
 var string254 = strings.Repeat("3", 254)
 
-func TestPVEncode(t *testing.T) {
+func TestRoundTrip(t *testing.T) {
 	tests := []struct {
 		in             interface{}
 		wantBE, wantLE []byte
@@ -100,15 +100,28 @@ func TestPVEncode(t *testing.T) {
 			} {
 				t.Run(byteOrder.byteOrder.String(), func(t *testing.T) {
 					var buf bytes.Buffer
-					s := &EncoderState{
+					es := &EncoderState{
 						Buf:       &buf,
 						ByteOrder: byteOrder.byteOrder,
 					}
-					if err := pvf.PVEncode(s); err != nil {
+					if err := pvf.PVEncode(es); err != nil {
 						t.Errorf("unexpected encode error: %v", err)
 					}
 					if diff := cmp.Diff(buf.Bytes(), byteOrder.want); diff != "" {
-						t.Errorf("got(-)/want(+)\n%s", diff)
+						t.Errorf("encode failed. got(-)/want(+)\n%s", diff)
+					}
+
+					ds := &DecoderState{
+						Buf:       bytes.NewReader(byteOrder.want),
+						ByteOrder: byteOrder.byteOrder,
+					}
+					out := reflect.New(reflect.TypeOf(test.in))
+					opvf := valueToPVField(out)
+					if err := opvf.PVDecode(ds); err != nil {
+						t.Errorf("unexpected decode error: %v", err)
+					}
+					if diff := cmp.Diff(out.Elem().Interface(), test.in); diff != "" {
+						t.Errorf("decode failed. got(-)/want(+)\n%s", diff)
 					}
 				})
 			}
