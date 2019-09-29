@@ -26,6 +26,8 @@ func TestField(t *testing.T) {
 		{uint64(1), []byte{0x27}},
 		{float32(1), []byte{0x42}},
 		{float64(1), []byte{0x43}},
+		{[]uint8{}, []byte{0x2c}},
+		{[4]uint8{1, 2, 3, 4}, []byte{0x3c, 4}},
 	}
 	for _, test := range tests {
 		name := fmt.Sprintf("%T: %#v", test.in, test.in)

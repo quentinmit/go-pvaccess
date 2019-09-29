@@ -330,7 +330,8 @@ func (PVDouble) Field() Field {
 
 type PVArray struct {
 	fixed bool
-	v     reflect.Value
+	// TODO: bounded-size arrays
+	v reflect.Value
 }
 
 func NewPVFixedArray(slicePtr interface{}) PVArray {
@@ -385,6 +386,23 @@ func (a PVArray) PVDecode(s *DecoderState) error {
 		}
 	}
 	return nil
+}
+func (a PVArray) Field() Field {
+	var prototype reflect.Value
+	if a.v.Len() > 0 {
+		prototype = a.v.Index(0).Addr()
+	} else {
+		prototype = reflect.New(a.v.Type().Elem())
+	}
+	// TODO: Don't ignore the error
+	f, _ := valueToField(prototype)
+	if a.fixed {
+		f.TypeCode |= FIXED_ARRAY
+		f.Size = PVSize(a.v.Len())
+	} else {
+		f.TypeCode |= VARIABLE_ARRAY
+	}
+	return f
 }
 func (a PVArray) Equal(b PVArray) bool {
 	if a.fixed == b.fixed && a.v.IsValid() && b.v.IsValid() {
@@ -552,12 +570,15 @@ const (
 	DOUBLE  = 0x43
 	STRING  = 0x60
 
-	ARRAY          = 0x10
+	ARRAY_BITS     = 0x18
+	VARIABLE_ARRAY = 0x08
+	BOUNDED_ARRAY  = 0x10
+	FIXED_ARRAY    = 0x18
 	BOUNDED_STRING = 0x86
 	STRUCT         = 0x80
 	UNION          = 0x81
-	STRUCT_ARRAY   = STRUCT | ARRAY
-	UNION_ARRAY    = UNION | ARRAY
+	STRUCT_ARRAY   = STRUCT | VARIABLE_ARRAY
+	UNION_ARRAY    = UNION | VARIABLE_ARRAY
 )
 
 func (f *Field) PVEncode(s *EncoderState) error {
@@ -586,7 +607,7 @@ func (f *Field) PVEncode(s *EncoderState) error {
 	if err := s.Buf.WriteByte(f.TypeCode); err != nil {
 		return err
 	}
-	if f.TypeCode&ARRAY == ARRAY || f.TypeCode == BOUNDED_STRING {
+	if f.TypeCode&0x10 == 0x10 || f.TypeCode == BOUNDED_STRING {
 		if err := f.Size.PVEncode(s); err != nil {
 			return err
 		}
@@ -636,7 +657,7 @@ func (f *Field) PVDecode(s *DecoderState) error {
 		}
 		f.TypeCode = typeCode
 	}
-	if f.TypeCode&ARRAY == ARRAY || f.TypeCode == BOUNDED_STRING {
+	if f.TypeCode&0x10 == 0x10 || f.TypeCode == BOUNDED_STRING {
 		if err := f.Size.PVDecode(s); err != nil {
 			return err
 		}
