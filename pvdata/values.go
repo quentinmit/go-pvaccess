@@ -418,6 +418,8 @@ func (a PVArray) Equal(b PVArray) bool {
 // String types
 type PVString string
 
+// TODO: Bounded string
+
 func (v PVString) PVEncode(s *EncoderState) error {
 	if err := PVSize(len(v)).PVEncode(s); err != nil {
 		return err
@@ -436,6 +438,12 @@ func (v *PVString) PVDecode(s *DecoderState) error {
 	}
 	*v = PVString(bytes)
 	return nil
+}
+func (v PVString) Field() Field {
+	return Field{
+		TypeCode: STRING,
+		Size:     PVSize(len(v)),
+	}
 }
 
 // Structure types
