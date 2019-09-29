@@ -494,17 +494,17 @@ type PVAny struct {
 
 func (v PVAny) PVEncode(s *EncoderState) error {
 	if v.Data == nil {
-		return encode(s, &Field{TypeCode: NULL_TYPE_CODE})
+		return Encode(s, &Field{TypeCode: NULL_TYPE_CODE})
 	}
 	f, err := valueToField(reflect.ValueOf(&v.Data))
 	if err != nil {
 		return err
 	}
-	return encode(s, &f, v.Data)
+	return Encode(s, &f, v.Data)
 }
 func (v *PVAny) PVDecode(s *DecoderState) error {
 	var f Field
-	if err := decode(s, &f); err != nil {
+	if err := Decode(s, &f); err != nil {
 		return err
 	}
 	if f.TypeCode == NULL_TYPE_CODE {
@@ -516,7 +516,7 @@ func (v *PVAny) PVDecode(s *DecoderState) error {
 		return err
 	}
 	v.Data = data
-	return decode(s, v.Data)
+	return Decode(s, v.Data)
 }
 
 // BitSet type
@@ -651,7 +651,7 @@ func (f *Field) PVEncode(s *EncoderState) error {
 	}
 	if f.TypeCode == STRUCT || f.TypeCode == UNION {
 		// TODO: Is this the same as the top-level ID?
-		if err := encode(s, f.ID, f.Fields); err != nil {
+		if err := Encode(s, f.ID, f.Fields); err != nil {
 			return err
 		}
 	}
@@ -703,7 +703,7 @@ func (f *Field) PVDecode(s *DecoderState) error {
 	}
 	if f.TypeCode == STRUCT || f.TypeCode == UNION {
 		// TODO: Is this the same as the top-level ID?
-		if err := decode(s, f.ID, f.Fields); err != nil {
+		if err := Decode(s, f.ID, f.Fields); err != nil {
 			return err
 		}
 

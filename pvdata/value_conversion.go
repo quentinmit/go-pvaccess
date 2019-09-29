@@ -53,7 +53,9 @@ func valueToPVField(v reflect.Value) PVField {
 	return nil
 }
 
-func encode(s *EncoderState, vs ...interface{}) error {
+// Encode writes vs to s.Buf.
+// All items in vs must implement PVField or be a pointer to something that can be converted to a PVField.
+func Encode(s *EncoderState, vs ...interface{}) error {
 	for _, v := range vs {
 		pvf := valueToPVField(reflect.ValueOf(v))
 		if pvf == nil {
@@ -65,7 +67,7 @@ func encode(s *EncoderState, vs ...interface{}) error {
 	}
 	return nil
 }
-func decode(s *DecoderState, vs ...interface{}) error {
+func Decode(s *DecoderState, vs ...interface{}) error {
 	for _, v := range vs {
 		if err := valueToPVField(reflect.ValueOf(v)).PVDecode(s); err != nil {
 			return err
