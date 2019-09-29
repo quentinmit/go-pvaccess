@@ -90,7 +90,7 @@ func (v PVSize) PVEncode(s *EncoderState) error {
 	if v < 0 {
 		return s.Buf.WriteByte(255)
 	}
-	if v < 8 {
+	if v < max8 {
 		return s.Buf.WriteByte(byte(v))
 	}
 	if v < max32 {

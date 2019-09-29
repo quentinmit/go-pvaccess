@@ -41,6 +41,7 @@ func TestRoundTrip(t *testing.T) {
 	}{
 		{PVSize(-1), []byte{255}, nil},
 		{PVSize(0), []byte{0}, nil},
+		{PVSize(253), []byte{253}, nil},
 		{PVSize(254), []byte{254, 0, 0, 0, 254}, []byte{254, 254, 0, 0, 0}},
 		{PVSize(0x7fffffff), []byte{254, 0x7f, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0x7f, 0xff, 0xff, 0xff}, []byte{254, 0xff, 0xff, 0xff, 0x7f, 0xff, 0xff, 0xff, 0x7f, 0, 0, 0, 0}},
 		{PVBoolean(true), []byte{1}, nil},
