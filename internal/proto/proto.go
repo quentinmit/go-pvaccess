@@ -25,7 +25,7 @@ const (
 
 type PVAccessHeader struct {
 	Version        pvdata.PVByte
-	Flags          pvdata.PVByte
+	Flags          pvdata.PVUByte
 	MessageCommand pvdata.PVByte
 	PayloadSize    pvdata.PVInt
 	ForceByteOrder bool

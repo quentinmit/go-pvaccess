@@ -50,7 +50,7 @@ func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
 type connection struct {
 	version        pvdata.PVByte
 	srv            *Server
-	direction      pvdata.PVByte
+	direction      pvdata.PVUByte
 	conn           net.Conn
 	encoderState   *pvdata.EncoderState
 	decoderState   *pvdata.DecoderState
@@ -76,15 +76,26 @@ func (srv *Server) handleConnection(conn net.Conn) {
 	}
 }
 
+type flusher interface {
+	Flush() error
+}
+
 func (c *connection) Flush() error {
-	return c.encoderState.Buf.(*bufio.Writer).Flush()
+	if f, ok := c.encoderState.Buf.(flusher); ok {
+		return f.Flush()
+	}
+	return nil
 }
 
 func (c *connection) sendCtrl(messageCommand pvdata.PVByte, payloadSize pvdata.PVInt) error {
 	defer c.Flush()
+	flags := proto.FLAG_MSG_CTRL | c.direction
+	if c.encoderState.ByteOrder == binary.BigEndian {
+		flags |= proto.FLAG_BO_BE
+	}
 	h := proto.PVAccessHeader{
 		Version:        c.version,
-		Flags:          proto.FLAG_MSG_CTRL | c.direction,
+		Flags:          flags,
 		MessageCommand: messageCommand,
 		PayloadSize:    payloadSize,
 	}
@@ -107,9 +118,13 @@ func (c *connection) encodePayload(payload interface{}) ([]byte, error) {
 func (c *connection) sendApp(messageCommand pvdata.PVByte, payload interface{}) error {
 	defer c.Flush()
 	bytes, err := c.encodePayload(payload)
+	flags := proto.FLAG_MSG_APP | c.direction
+	if c.encoderState.ByteOrder == binary.BigEndian {
+		flags |= proto.FLAG_BO_BE
+	}
 	h := proto.PVAccessHeader{
 		Version:        c.version,
-		Flags:          proto.FLAG_MSG_APP | c.direction,
+		Flags:          flags,
 		MessageCommand: messageCommand,
 		PayloadSize:    pvdata.PVInt(len(bytes)),
 	}
