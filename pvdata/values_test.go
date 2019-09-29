@@ -30,6 +30,11 @@ func TestPVSize(t *testing.T) {
 var string254 = strings.Repeat("3", 254)
 
 func TestRoundTrip(t *testing.T) {
+	anyTargetInt := PVShort(12)
+	exampleStruct := struct {
+		Code    byte
+		Message string
+	}{15, "yes"}
 	tests := []struct {
 		in             interface{}
 		wantBE, wantLE []byte
@@ -71,15 +76,14 @@ func TestRoundTrip(t *testing.T) {
 		{string254, append([]byte{254, 0, 0, 0, 254}, []byte(string254)...), append([]byte{254, 254, 0, 0, 0}, []byte(string254)...)},
 		{PVStatus{PVStatus_OK, "", ""}, []byte{0xFF}, nil},
 		{PVStatus{PVStatus_FATAL, "3", "2"}, []byte{3, 1, 0x33, 1, 0x32}, nil},
-		{struct {
-			Code    byte
-			Message string
-		}{15, "yes"}, []byte{15, 3, 'y', 'e', 's'}, nil},
+		{exampleStruct, []byte{15, 3, 'y', 'e', 's'}, nil},
+		{PVAny{&anyTargetInt}, []byte{0x21, 0, 12}, []byte{0x21, 12, 0}},
+		{PVAny{nil}, []byte{0xff}, nil},
 	}
 	for _, test := range tests {
 		name := fmt.Sprintf("%T: %#v", test.in, test.in)
 		t.Run(name, func(t *testing.T) {
-			// Make a copy on the stack
+			// Make a copy on the heap
 			in := reflect.New(reflect.TypeOf(test.in))
 			in.Elem().Set(reflect.ValueOf(test.in))
 			pvf := valueToPVField(in)

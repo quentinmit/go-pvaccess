@@ -487,14 +487,40 @@ func (v PVStructure) PVDecode(s *DecoderState) error {
 
 // TODO: Regular union is selector value encoded as size, followed by data
 
-// TODO: Variant union is a field description, followed by data
-
+// PVAny is a variant union, encoded as a field description, followed by data
 type PVAny struct {
-	Field Field
-	Data  PVField
+	Data PVField
+}
+
+func (v PVAny) PVEncode(s *EncoderState) error {
+	if v.Data == nil {
+		return encode(s, &Field{TypeCode: NULL_TYPE_CODE})
+	}
+	f, err := valueToField(reflect.ValueOf(&v.Data))
+	if err != nil {
+		return err
+	}
+	return encode(s, &f, v.Data)
+}
+func (v *PVAny) PVDecode(s *DecoderState) error {
+	var f Field
+	if err := decode(s, &f); err != nil {
+		return err
+	}
+	if f.TypeCode == NULL_TYPE_CODE {
+		v.Data = nil
+		return nil
+	}
+	data, err := f.createZero()
+	if err != nil {
+		return err
+	}
+	v.Data = data
+	return decode(s, v.Data)
 }
 
 // BitSet type
+// TODO
 
 // Status type
 
@@ -615,6 +641,9 @@ func (f *Field) PVEncode(s *EncoderState) error {
 	if err := s.Buf.WriteByte(f.TypeCode); err != nil {
 		return err
 	}
+	if f.TypeCode == NULL_TYPE_CODE {
+		return nil
+	}
 	if f.TypeCode&0x10 == 0x10 || f.TypeCode == BOUNDED_STRING {
 		if err := f.Size.PVEncode(s); err != nil {
 			return err
@@ -637,6 +666,8 @@ func (f *Field) PVDecode(s *DecoderState) error {
 	}
 	f.TypeCode = typeCode
 	switch f.TypeCode {
+	case NULL_TYPE_CODE:
+		return nil
 	case ONLY_ID_TYPE_CODE:
 		f.HasID = true
 		f.TypeCode = NULL_TYPE_CODE
@@ -679,4 +710,45 @@ func (f *Field) PVDecode(s *DecoderState) error {
 	}
 	// TODO: Deserialize STRUCT_ARRAY and UNION_ARRAY types
 	return nil
+}
+
+func (f Field) createZero() (PVField, error) {
+	switch f.TypeCode {
+	case NULL_TYPE_CODE:
+		return nil, nil
+	}
+	// TODO: Create arrays
+	if f.TypeCode&ARRAY_BITS == 0 {
+		var prototype interface{}
+		switch f.TypeCode {
+		case BOOLEAN:
+			prototype = PVBoolean(false)
+		case BYTE:
+			prototype = PVByte(0)
+		case SHORT:
+			prototype = PVShort(0)
+		case INT:
+			prototype = PVInt(0)
+		case LONG:
+			prototype = PVLong(0)
+		case UBYTE:
+			prototype = PVUByte(0)
+		case USHORT:
+			prototype = PVUShort(0)
+		case UINT:
+			prototype = PVUInt(0)
+		case ULONG:
+			prototype = PVULong(0)
+		case FLOAT:
+			prototype = PVFloat(0)
+		case DOUBLE:
+			prototype = PVDouble(0)
+		case STRING:
+			prototype = PVString("")
+		}
+		if prototype != nil {
+			return reflect.New(reflect.TypeOf(prototype)).Interface().(PVField), nil
+		}
+	}
+	return nil, errors.New("don't know how to create zero value")
 }

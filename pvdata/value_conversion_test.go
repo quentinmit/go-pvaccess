@@ -33,7 +33,7 @@ func TestField(t *testing.T) {
 	for _, test := range tests {
 		name := fmt.Sprintf("%T: %#v", test.in, test.in)
 		t.Run(name, func(t *testing.T) {
-			// Make a copy on the stack
+			// Make a copy on the heap
 			in := reflect.New(reflect.TypeOf(test.in))
 			in.Elem().Set(reflect.ValueOf(test.in))
 			f, err := valueToField(in)

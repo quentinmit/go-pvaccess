@@ -12,6 +12,8 @@ func valueToPVField(v reflect.Value) PVField {
 			return i
 		}
 		switch i := i.(type) {
+		case *PVField:
+			return *i
 		case *bool:
 			return (*PVBoolean)(i)
 		case *int8:
@@ -53,7 +55,11 @@ func valueToPVField(v reflect.Value) PVField {
 
 func encode(s *EncoderState, vs ...interface{}) error {
 	for _, v := range vs {
-		if err := valueToPVField(reflect.ValueOf(v)).PVEncode(s); err != nil {
+		pvf := valueToPVField(reflect.ValueOf(v))
+		if pvf == nil {
+			return fmt.Errorf("can't encode %#v", v)
+		}
+		if err := pvf.PVEncode(s); err != nil {
 			return err
 		}
 	}
@@ -80,5 +86,5 @@ func valueToField(v reflect.Value) (Field, error) {
 	if f, ok := pvf.(Fielder); ok {
 		return f.Field(), nil
 	}
-	return Field{}, fmt.Errorf("don't know how to describe %v", v.Interface())
+	return Field{}, fmt.Errorf("don't know how to describe %#v", v.Interface())
 }
