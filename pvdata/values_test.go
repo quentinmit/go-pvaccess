@@ -74,6 +74,8 @@ func TestRoundTrip(t *testing.T) {
 		{NewPVFixedArray(&[]bool{false, true, true}), []byte{0, 1, 1}, nil},
 		{PVString("33"), []byte{2, 0x33, 0x33}, nil},
 		{string254, append([]byte{254, 0, 0, 0, 254}, []byte(string254)...), append([]byte{254, 254, 0, 0, 0}, []byte(string254)...)},
+		{[]string{"1", "22", "333"}, []byte{3, 1, 0x31, 2, 0x32, 0x32, 3, 0x33, 0x33, 0x33}, nil},
+		{[]PVString{"1", "22", "333"}, []byte{3, 1, 0x31, 2, 0x32, 0x32, 3, 0x33, 0x33, 0x33}, nil},
 		{PVStatus{PVStatus_OK, "", ""}, []byte{0xFF}, nil},
 		{PVStatus{PVStatus_FATAL, "3", "2"}, []byte{3, 1, 0x33, 1, 0x32}, nil},
 		{exampleStruct, []byte{15, 3, 'y', 'e', 's'}, nil},
