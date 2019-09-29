@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -48,31 +49,39 @@ func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
 }
 
 type connection struct {
+	log            *log.Logger
 	version        pvdata.PVByte
 	srv            *Server
 	direction      pvdata.PVUByte
 	conn           net.Conn
+	writer         *proto.AligningWriter
 	encoderState   *pvdata.EncoderState
 	decoderState   *pvdata.DecoderState
 	forceByteOrder bool
 }
 
-func (srv *Server) handleConnection(conn net.Conn) {
-	defer conn.Close()
-	c := &connection{
-		srv:       srv,
-		direction: proto.FLAG_FROM_SERVER,
-		conn:      conn,
+func newConn(conn net.Conn) *connection {
+	writer := proto.NewAligningWriter(conn)
+	return &connection{
+		log:    log.New(os.Stderr, fmt.Sprintf("[%s] ", conn.RemoteAddr()), log.LstdFlags|log.Lshortfile),
+		conn:   conn,
+		writer: writer,
 		encoderState: &pvdata.EncoderState{
-			Buf:       bufio.NewWriter(conn),
+			Buf:       bufio.NewWriter(writer),
 			ByteOrder: binary.LittleEndian,
 		},
 		decoderState: &pvdata.DecoderState{
 			Buf: bufio.NewReader(conn),
 		},
 	}
+}
+
+func (srv *Server) handleConnection(conn net.Conn) {
+	defer conn.Close()
+	c := newConn(conn)
+	c.srv = srv
 	if err := c.handleServer(); err != nil {
-		log.Printf("error on connection %v: %v", conn, err)
+		c.log.Printf("error on connection %v: %v", conn.RemoteAddr(), err)
 	}
 }
 
@@ -80,15 +89,22 @@ type flusher interface {
 	Flush() error
 }
 
-func (c *connection) Flush() error {
+func (c *connection) AlignFlush() error {
 	if f, ok := c.encoderState.Buf.(flusher); ok {
-		return f.Flush()
+		if err := f.Flush(); err != nil {
+			return err
+		}
 	}
-	return nil
+	n, err := c.writer.Align()
+	if n != 0 {
+		c.log.Printf("adding %d padding bytes", n)
+	}
+	return err
 }
 
 func (c *connection) sendCtrl(messageCommand pvdata.PVByte, payloadSize pvdata.PVInt) error {
-	defer c.Flush()
+	defer c.AlignFlush()
+	c.log.Printf("sending control message %x with payload %x", messageCommand, payloadSize)
 	flags := proto.FLAG_MSG_CTRL | c.direction
 	if c.encoderState.ByteOrder == binary.BigEndian {
 		flags |= proto.FLAG_BO_BE
@@ -116,7 +132,7 @@ func (c *connection) encodePayload(payload interface{}) ([]byte, error) {
 }
 
 func (c *connection) sendApp(messageCommand pvdata.PVByte, payload interface{}) error {
-	defer c.Flush()
+	defer c.AlignFlush()
 	bytes, err := c.encodePayload(payload)
 	flags := proto.FLAG_MSG_APP | c.direction
 	if c.encoderState.ByteOrder == binary.BigEndian {
@@ -128,6 +144,7 @@ func (c *connection) sendApp(messageCommand pvdata.PVByte, payload interface{}) 
 		MessageCommand: messageCommand,
 		PayloadSize:    pvdata.PVInt(len(bytes)),
 	}
+	c.log.Printf("sending app message %x with payload size %d", messageCommand, len(bytes))
 	if err := h.PVEncode(c.encoderState); err != nil {
 		return err
 	}
@@ -148,7 +165,7 @@ func (c *connection) handleControlMessage(header *proto.PVAccessHeader) error {
 	case proto.CTRL_ECHO_REQUEST:
 		return c.sendCtrl(proto.CTRL_ECHO_RESPONSE, header.PayloadSize)
 	default:
-		log.Printf("ignoring unknown control message %02x", header.MessageCommand)
+		c.log.Printf("ignoring unknown control message %02x", header.MessageCommand)
 	}
 	return nil
 }
@@ -158,6 +175,7 @@ type filer interface {
 }
 
 func (c *connection) handleServer() error {
+	c.direction = proto.FLAG_FROM_SERVER
 	c.version = pvdata.PVByte(2)
 	// 0 = Ignore byte order field in header
 	if err := c.sendCtrl(proto.CTRL_SET_BYTE_ORDER, 0); err != nil {
@@ -173,10 +191,10 @@ func (c *connection) handleServer() error {
 
 	req := proto.ConnectionValidationRequest{
 		ServerReceiveBufferSize:            pvdata.PVInt(bufSize),
-		ServerIntrospectionRegistryMaxSize: 1024,
+		ServerIntrospectionRegistryMaxSize: 0xff7f,
 		AuthNZ: []string{"anonymous"},
 	}
-	c.sendApp(proto.APP_CONNECTION_VALIDATION, req)
+	c.sendApp(proto.APP_CONNECTION_VALIDATION, &req)
 
 	for {
 		header := proto.PVAccessHeader{
@@ -185,7 +203,7 @@ func (c *connection) handleServer() error {
 		if err := pvdata.Decode(c.decoderState, &header); err != nil {
 			return err
 		}
-		log.Printf("received packet %#v", header)
+		c.log.Printf("received packet %#v", header)
 		if header.Flags&proto.FLAG_MSG_CTRL == proto.FLAG_MSG_CTRL {
 			if err := c.handleControlMessage(&header); err != nil {
 				return err
@@ -198,6 +216,7 @@ func (c *connection) handleServer() error {
 			if err := pvdata.Decode(c.decoderState, &resp); err != nil {
 				return err
 			}
+			c.log.Printf("received connection validation %#v", resp)
 			// TODO: Implement flow control
 		}
 	}

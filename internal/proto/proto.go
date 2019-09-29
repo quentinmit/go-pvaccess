@@ -41,6 +41,9 @@ func (v *PVAccessHeader) PVEncode(s *pvdata.EncoderState) error {
 	if err := v.Flags.PVEncode(s); err != nil {
 		return err
 	}
+	if err := v.MessageCommand.PVEncode(s); err != nil {
+		return err
+	}
 	return v.PayloadSize.PVEncode(s)
 }
 func (v *PVAccessHeader) PVDecode(s *pvdata.DecoderState) error {
