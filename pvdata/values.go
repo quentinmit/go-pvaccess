@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strings"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -520,6 +521,22 @@ func (v PVStructure) PVDecode(s *DecoderState) error {
 	}
 	return nil
 }
+func (v PVStructure) String() string {
+	return fmt.Sprintf("%s {%v}", v.name, v.v.Interface())
+}
+func (v PVStructure) Get(name string) PVField {
+	t := v.v.Type()
+	for i := 0; i < v.v.NumField(); i++ {
+		got, _ := parseTag(t.Field(i).Tag.Get("pvaccess"))
+		if got == "" {
+			got = t.Field(i).Name
+		}
+		if got == name {
+			return valueToPVField(v.v.Field(i).Addr())
+		}
+	}
+	return nil
+}
 
 // Union types
 
@@ -707,6 +724,7 @@ func (f *Field) PVDecode(s *DecoderState) error {
 	case NULL_TYPE_CODE:
 		return nil
 	case ONLY_ID_TYPE_CODE:
+		// TODO: Look up in DecoderState
 		f.HasID = true
 		f.TypeCode = NULL_TYPE_CODE
 		return nil
@@ -741,11 +759,13 @@ func (f *Field) PVDecode(s *DecoderState) error {
 	}
 	if f.TypeCode == STRUCT || f.TypeCode == UNION {
 		// TODO: Is this the same as the top-level ID?
-		if err := Decode(s, f.ID, f.Fields); err != nil {
+		// (NO, in one example top-level ID was "\x00" but struct ID was "")
+		if err := Decode(s, &f.ID, &f.Fields); err != nil {
 			return err
 		}
 
 	}
+	// TODO: If f.HasID, save this Field in DecoderState so it can be reused.
 	// TODO: Deserialize STRUCT_ARRAY and UNION_ARRAY types
 	return nil
 }
@@ -791,5 +811,31 @@ func (f Field) createZero() (PVField, error) {
 			return reflect.New(reflect.TypeOf(prototype)).Interface().(PVField), nil
 		}
 	}
-	return nil, errors.New("don't know how to create zero value")
+	if f.TypeCode == STRUCT {
+		var fields []reflect.StructField
+		for _, field := range f.Fields {
+			prototype, err := field.Field.createZero()
+			if err != nil {
+				return nil, err
+			}
+			name := field.Name
+			if len(name) > 0 {
+				name = strings.ToUpper(name[0:1]) + name[1:]
+			}
+			t := reflect.TypeOf(prototype)
+			if t.Kind() == reflect.Ptr {
+				t = t.Elem()
+			}
+			fields = append(fields, reflect.StructField{
+				Name: name,
+				Type: t,
+				Tag:  reflect.StructTag("pvaccess:\"" + field.Name + "\""),
+			})
+		}
+		pvf := valueToPVField(reflect.New(reflect.StructOf(fields)))
+		if pvf != nil {
+			return pvf, nil
+		}
+	}
+	return nil, fmt.Errorf("don't know how to create zero value for %#v", f)
 }

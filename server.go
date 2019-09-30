@@ -51,7 +51,8 @@ type serverConn struct {
 }
 
 type connChannel struct {
-	name string
+	name      string
+	handleRPC func(args pvdata.PVAny) (response pvdata.PVAny, status pvdata.PVStatus)
 }
 
 func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
@@ -66,6 +67,7 @@ func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
 func (srv *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 	c := srv.newConn(conn)
+	c.Log.Printf("new connection")
 	if err := c.serve(); err != nil {
 		c.Log.Printf("error on connection %v: %v", conn.RemoteAddr(), err)
 	}
@@ -131,7 +133,8 @@ func (c *serverConn) handleCreateChannelRequest(msg *connection.Message) error {
 		if ch.ChannelName == "server" {
 			resp.ServerChannelID = ch.ClientChannelID
 			c.channels[ch.ClientChannelID] = &connChannel{
-				name: ch.ChannelName,
+				name:      ch.ChannelName,
+				handleRPC: c.handleServerRPC,
 			}
 		} else {
 			resp.Status.Type = pvdata.PVStatus_ERROR
@@ -144,21 +147,60 @@ func (c *serverConn) handleCreateChannelRequest(msg *connection.Message) error {
 	return c.SendApp(proto.APP_CHANNEL_CREATE, &resp)
 }
 
+func (c *serverConn) handleServerRPC(args pvdata.PVAny) (response pvdata.PVAny, status pvdata.PVStatus) {
+	if args, ok := args.Data.(pvdata.PVStructure); ok {
+		if field := args.Get("field"); field != nil {
+			if field, ok := field.(*pvdata.PVBoolean); ok {
+				c.Log.Printf("server({field=%s})", field)
+			} else {
+				c.Log.Printf("server({field not PVBoolean})")
+			}
+		} else {
+			c.Log.Printf("server({})")
+		}
+	} else {
+		c.Log.Printf("server()")
+	}
+	return pvdata.PVAny{}, pvdata.PVStatus{
+		Type:    pvdata.PVStatus_ERROR,
+		Message: pvdata.PVString("invalid argument"),
+	}
+}
+
 func (c *serverConn) handleChannelRPC(msg *connection.Message) error {
+	c.Log.Printf("CHANNEL_RPC(%x)", msg.Data)
 	var req proto.ChannelRPCRequest
 	if err := msg.Decode(&req); err != nil {
 		return err
 	}
-	switch req.Subcommand {
-	case proto.CHANNEL_RPC_INIT:
-		c.Log.Printf("received request to init channel RPC with body %#v", req.PVRequest)
-	}
-	return c.SendApp(proto.APP_CHANNEL_RPC, &proto.ChannelRPCResponseInit{
+	c.Log.Printf("CHANNEL_RPC(%#v)", req)
+	resp := &proto.ChannelRPCResponseInit{
 		RequestID:  req.RequestID,
 		Subcommand: req.Subcommand,
-		Status: pvdata.PVStatus{
-			Type:    pvdata.PVStatus_ERROR,
-			Message: pvdata.PVString("don't know how to execute that RPC"),
-		},
-	})
+	}
+	channel := c.channels[req.ServerChannelID]
+	c.Log.Printf("channel = %#v", channel)
+	if channel != nil && channel.handleRPC != nil {
+		switch req.Subcommand {
+		case proto.CHANNEL_RPC_INIT:
+			c.Log.Printf("received request to init channel RPC with body %v", req.PVRequest.Data)
+			return c.SendApp(proto.APP_CHANNEL_RPC, resp)
+		case proto.CHANNEL_RPC_RPC:
+			c.Log.Printf("received request to execute channel RPC with body %v", req.PVRequest.Data)
+			data, status := channel.handleRPC(req.PVRequest)
+			return c.SendApp(proto.APP_CHANNEL_RPC, &proto.ChannelRPCResponse{
+				RequestID:      req.RequestID,
+				Subcommand:     req.Subcommand,
+				Status:         status,
+				PVResponseData: data,
+			})
+		}
+	}
+	c.Log.Printf("request to RPC on channel %q which cannot RPC", channel.name)
+	resp.Status = pvdata.PVStatus{
+		Type:    pvdata.PVStatus_ERROR,
+		Message: pvdata.PVString("don't know how to execute that RPC"),
+	}
+
+	return c.SendApp(proto.APP_CHANNEL_RPC, resp)
 }
