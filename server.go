@@ -198,30 +198,56 @@ func (c *connection) handleServer() error {
 	c.sendApp(proto.APP_CONNECTION_VALIDATION, &req)
 
 	for {
-		header := proto.PVAccessHeader{
-			ForceByteOrder: c.forceByteOrder,
-		}
-		if err := pvdata.Decode(c.decoderState, &header); err != nil {
+		if err := c.handleServerOnePacket(); err != nil {
 			return err
 		}
-		c.log.Printf("received packet %#v", header)
-		if header.Flags&proto.FLAG_MSG_CTRL == proto.FLAG_MSG_CTRL {
-			if err := c.handleControlMessage(&header); err != nil {
-				return err
-			}
-			continue
+	}
+}
+func (c *connection) handleServerOnePacket() error {
+	header := proto.PVAccessHeader{
+		ForceByteOrder: c.forceByteOrder,
+	}
+	if err := pvdata.Decode(c.decoderState, &header); err != nil {
+		return err
+	}
+	c.log.Printf("received packet %#v", header)
+	if header.Flags&proto.FLAG_MSG_CTRL == proto.FLAG_MSG_CTRL {
+		return c.handleControlMessage(&header)
+	}
+	switch header.MessageCommand {
+	case proto.APP_CONNECTION_VALIDATION:
+		resp := proto.ConnectionValidationResponse{}
+		if err := pvdata.Decode(c.decoderState, &resp); err != nil {
+			return err
 		}
-		switch header.MessageCommand {
-		case proto.APP_CONNECTION_VALIDATION:
-			resp := proto.ConnectionValidationResponse{}
-			if err := pvdata.Decode(c.decoderState, &resp); err != nil {
-				return err
-			}
-			c.log.Printf("received connection validation %#v", resp)
-			// TODO: Implement flow control
-			if err := c.sendApp(proto.APP_CONNECTION_VALIDATED, &proto.ConnectionValidated{}); err != nil {
-				return err
-			}
+		c.log.Printf("received connection validation %#v", resp)
+		// TODO: Implement flow control
+		if err := c.sendApp(proto.APP_CONNECTION_VALIDATED, &proto.ConnectionValidated{}); err != nil {
+			return err
+		}
+	case proto.APP_CHANNEL_CREATE:
+		var req proto.CreateChannelRequest
+		if err := pvdata.Decode(c.decoderState, &req); err != nil {
+			return err
+		}
+		if err := c.handleCreateChannelRequest(&req); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+func (c *connection) handleCreateChannelRequest(req *proto.CreateChannelRequest) error {
+	var resp proto.CreateChannelResponse
+	if len(req.Channels) == 1 {
+		ch := req.Channels[0]
+		c.log.Printf("received request to create channel %q as client ID %x", ch.ChannelName, ch.ClientChannelID)
+		resp.ClientChannelID = ch.ClientChannelID
+		resp.Status.Type = pvdata.PVStatus_ERROR
+		resp.Status.Message = pvdata.PVString(fmt.Sprintf("unknown channel %q", ch.ChannelName))
+	} else {
+		resp.Status.Type = pvdata.PVStatus_ERROR
+		resp.Status.Message = "wrong number of channels"
+	}
+	return c.sendApp(proto.APP_CHANNEL_CREATE, &resp)
 }

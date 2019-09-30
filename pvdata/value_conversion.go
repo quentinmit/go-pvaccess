@@ -9,9 +9,13 @@ import (
 
 func valueToPVField(v reflect.Value, tag string) PVField {
 	var tags map[string]int
+	var name string
 	if len(tag) > 0 {
 		tags = make(map[string]int)
-		for _, pair := range strings.Split(tag, ",") {
+		pairs := strings.Split(tag, ",")
+		name = pairs[0]
+		pairs = pairs[1:]
+		for _, pair := range pairs {
 			if parts := strings.SplitN(pair, "=", 2); len(parts) == 2 {
 				if val, err := strconv.Atoi(parts[1]); err == nil {
 					tags[parts[0]] = val
@@ -68,7 +72,7 @@ func valueToPVField(v reflect.Value, tag string) PVField {
 		case reflect.Array:
 			return PVArray{true, v.Elem()}
 		case reflect.Struct:
-			return PVStructure{v.Elem()}
+			return PVStructure{name, v.Elem()}
 		}
 	}
 	return nil

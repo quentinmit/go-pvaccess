@@ -467,14 +467,18 @@ func (v PVBoundedString) Field() Field {
 // Structure types
 
 type PVStructure struct {
-	v reflect.Value
+	name string
+	v    reflect.Value
 }
 
 // TODO: Support bitfields for partial pack/unpack
 func (v PVStructure) PVEncode(s *EncoderState) error {
+	t := v.v.Type()
 	for i := 0; i < v.v.NumField(); i++ {
 		item := v.v.Field(i).Addr()
-		if err := Encode(s, item.Interface()); err != nil {
+		tag := t.Field(i).Tag.Get("pvaccess")
+		pvf := valueToPVField(item, tag)
+		if err := pvf.PVEncode(s); err != nil {
 			return err
 		}
 	}

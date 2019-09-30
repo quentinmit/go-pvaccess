@@ -135,12 +135,41 @@ type ConnectionValidated struct {
 	Status pvdata.PVStatus
 }
 
-type CreateChannelRequest struct {
-	Channels []struct {
-		ClientChannelID pvdata.PVInt
-		ChannelName     string `pvaccess:",bound=500"`
-	}
+type CreateChannelRequest_Channel struct {
+	ClientChannelID pvdata.PVInt
+	ChannelName     string `pvaccess:",bound=500"`
 }
+type CreateChannelRequest struct {
+	Channels []CreateChannelRequest_Channel
+}
+
+func (c CreateChannelRequest) PVEncode(s *pvdata.EncoderState) error {
+	// Encoded as a PVShort length (instead of PVSize)
+	count := pvdata.PVShort(len(c.Channels))
+	if err := pvdata.Encode(s, &count); err != nil {
+		return err
+	}
+	for _, c := range c.Channels {
+		if err := pvdata.Encode(s, &c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (c *CreateChannelRequest) PVDecode(s *pvdata.DecoderState) error {
+	var count pvdata.PVShort
+	if err := pvdata.Decode(s, &count); err != nil {
+		return err
+	}
+	c.Channels = make([]CreateChannelRequest_Channel, int(count))
+	for i := range c.Channels {
+		if err := pvdata.Decode(s, &c.Channels[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type CreateChannelResponse struct {
 	ClientChannelID pvdata.PVInt
 	ServerChannelID pvdata.PVInt
