@@ -89,7 +89,7 @@ func TestRoundTrip(t *testing.T) {
 			// Make a copy on the heap
 			in := reflect.New(reflect.TypeOf(test.in))
 			in.Elem().Set(reflect.ValueOf(test.in))
-			pvf := valueToPVField(in)
+			pvf := valueToPVField(in, "")
 			if pvf == nil && test.wantBE != nil {
 				t.Fatal("failed to convert to PVField; expected PVField implementation")
 			}
@@ -129,7 +129,7 @@ func TestRoundTrip(t *testing.T) {
 						ByteOrder: byteOrder.byteOrder,
 					}
 					out := reflect.New(reflect.TypeOf(test.in))
-					opvf := valueToPVField(out)
+					opvf := valueToPVField(out, "")
 					out = out.Elem()
 					if in, ok := test.in.(PVArray); ok {
 						pva := PVArray{in.fixed, reflect.MakeSlice(in.v.Type(), in.v.Len(), in.v.Len())}

@@ -349,7 +349,7 @@ func (a PVArray) PVEncode(s *EncoderState) error {
 	}
 	for i := 0; i < a.v.Len(); i++ {
 		item := a.v.Index(i).Addr()
-		pvf := valueToPVField(item)
+		pvf := valueToPVField(item, "")
 		if pvf == nil {
 			return fmt.Errorf("don't know how to encode %#v", item.Interface())
 		}
@@ -377,7 +377,7 @@ func (a PVArray) PVDecode(s *DecoderState) error {
 	}
 	for i := 0; i < int(size); i++ {
 		item := a.v.Index(i).Addr()
-		pvf := valueToPVField(item)
+		pvf := valueToPVField(item, "")
 		if pvf == nil {
 			return fmt.Errorf("don't know how to decode %#v", item.Interface())
 		}
@@ -446,6 +446,24 @@ func (v PVString) Field() Field {
 	}
 }
 
+type PVBoundedString struct {
+	*PVString
+	Bound PVSize
+}
+
+func (v PVBoundedString) PVEncode(s *EncoderState) error {
+	if len(*v.PVString) > int(v.Bound) {
+		return fmt.Errorf("string of %d bytes exceeds bound of %d bytes", len(*v.PVString), v.Bound)
+	}
+	return v.PVString.PVEncode(s)
+}
+func (v PVBoundedString) Field() Field {
+	return Field{
+		TypeCode: BOUNDED_STRING,
+		Size:     v.Bound,
+	}
+}
+
 // Structure types
 
 type PVStructure struct {
@@ -456,11 +474,7 @@ type PVStructure struct {
 func (v PVStructure) PVEncode(s *EncoderState) error {
 	for i := 0; i < v.v.NumField(); i++ {
 		item := v.v.Field(i).Addr()
-		pvf := valueToPVField(item)
-		if pvf == nil {
-			return fmt.Errorf("don't know how to encode %#v", item.Interface())
-		}
-		if err := pvf.PVEncode(s); err != nil {
+		if err := Encode(s, item.Interface()); err != nil {
 			return err
 		}
 	}
@@ -472,11 +486,7 @@ func (v PVStructure) PVDecode(s *DecoderState) error {
 	}
 	for i := 0; i < v.v.NumField(); i++ {
 		item := v.v.Field(i).Addr()
-		pvf := valueToPVField(item)
-		if pvf == nil {
-			return fmt.Errorf("don't know how to decode %#v", item.Interface())
-		}
-		if err := pvf.PVDecode(s); err != nil {
+		if err := Decode(s, item.Interface()); err != nil {
 			return err
 		}
 	}
@@ -745,6 +755,9 @@ func (f Field) createZero() (PVField, error) {
 			prototype = PVDouble(0)
 		case STRING:
 			prototype = PVString("")
+		case BOUNDED_STRING:
+			var str PVString
+			return &PVBoundedString{&str, f.Size}, nil
 		}
 		if prototype != nil {
 			return reflect.New(reflect.TypeOf(prototype)).Interface().(PVField), nil

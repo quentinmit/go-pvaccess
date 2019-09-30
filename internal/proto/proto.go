@@ -82,6 +82,7 @@ const (
 	APP_SEARCH_RESPONSE       = 0x04
 	APP_CHANNEL_CREATE        = 0x07
 	APP_CHANNEL_DESTROY       = 0x08
+	APP_CONNECTION_VALIDATED  = 0x09
 	APP_CHANNEL_GET           = 0x0A
 	APP_CHANNEL_PUT           = 0x0B
 	APP_CHANNEL_PUT_GET       = 0x0C
@@ -132,4 +133,38 @@ type ConnectionValidationResponse struct {
 
 type ConnectionValidated struct {
 	Status pvdata.PVStatus
+}
+
+type CreateChannelRequest struct {
+	Channels []struct {
+		ClientChannelID pvdata.PVInt
+		ChannelName     string `pvaccess:",bound=500"`
+	}
+}
+type CreateChannelResponse struct {
+	ClientChannelID pvdata.PVInt
+	ServerChannelID pvdata.PVInt
+	Status          pvdata.PVStatus
+	AccessRights    pvdata.PVShort
+}
+
+func (c CreateChannelResponse) PVEncode(s *pvdata.EncoderState) error {
+	if err := pvdata.Encode(s, &c.ClientChannelID, &c.ServerChannelID, &c.Status); err != nil {
+		return err
+	}
+	switch c.Status.Type {
+	case pvdata.PVStatus_OK, pvdata.PVStatus_WARNING:
+		return pvdata.Encode(s, &c.AccessRights)
+	}
+	return nil
+}
+func (c *CreateChannelResponse) PVDecode(s *pvdata.DecoderState) error {
+	if err := pvdata.Decode(s, &c.ClientChannelID, &c.ServerChannelID, &c.Status); err != nil {
+		return err
+	}
+	switch c.Status.Type {
+	case pvdata.PVStatus_OK, pvdata.PVStatus_WARNING:
+		return pvdata.Decode(s, &c.AccessRights)
+	}
+	return nil
 }

@@ -67,7 +67,7 @@ func newConn(conn net.Conn) *connection {
 		conn:   conn,
 		writer: writer,
 		encoderState: &pvdata.EncoderState{
-			Buf:       bufio.NewWriter(writer),
+			Buf:       bufio.NewWriter(conn),
 			ByteOrder: binary.LittleEndian,
 		},
 		decoderState: &pvdata.DecoderState{
@@ -95,6 +95,7 @@ func (c *connection) AlignFlush() error {
 			return err
 		}
 	}
+	return nil
 	n, err := c.writer.Align()
 	if n != 0 {
 		c.log.Printf("adding %d padding bytes", n)
@@ -191,7 +192,7 @@ func (c *connection) handleServer() error {
 
 	req := proto.ConnectionValidationRequest{
 		ServerReceiveBufferSize:            pvdata.PVInt(bufSize),
-		ServerIntrospectionRegistryMaxSize: 0xff7f,
+		ServerIntrospectionRegistryMaxSize: 0x7fff,
 		AuthNZ: []string{"anonymous"},
 	}
 	c.sendApp(proto.APP_CONNECTION_VALIDATION, &req)
@@ -218,6 +219,9 @@ func (c *connection) handleServer() error {
 			}
 			c.log.Printf("received connection validation %#v", resp)
 			// TODO: Implement flow control
+			if err := c.sendApp(proto.APP_CONNECTION_VALIDATED, &proto.ConnectionValidated{}); err != nil {
+				return err
+			}
 		}
 	}
 }

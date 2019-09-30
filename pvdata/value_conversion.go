@@ -3,9 +3,24 @@ package pvdata
 import (
 	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
 )
 
-func valueToPVField(v reflect.Value) PVField {
+func valueToPVField(v reflect.Value, tag string) PVField {
+	var tags map[string]int
+	if len(tag) > 0 {
+		tags = make(map[string]int)
+		for _, pair := range strings.Split(tag, ",") {
+			if parts := strings.SplitN(pair, "=", 2); len(parts) == 2 {
+				if val, err := strconv.Atoi(parts[1]); err == nil {
+					tags[parts[0]] = val
+				}
+			} else {
+				tags[pair] = 1
+			}
+		}
+	}
 	if v.CanInterface() {
 		i := v.Interface()
 		if i, ok := i.(PVField); ok {
@@ -37,6 +52,12 @@ func valueToPVField(v reflect.Value) PVField {
 		case *float64:
 			return (*PVDouble)(i)
 		case *string:
+			if bound := tags["bound"]; bound > 0 {
+				return &PVBoundedString{
+					(*PVString)(i),
+					PVSize(bound),
+				}
+			}
 			return (*PVString)(i)
 		}
 	}
@@ -57,7 +78,7 @@ func valueToPVField(v reflect.Value) PVField {
 // All items in vs must implement PVField or be a pointer to something that can be converted to a PVField.
 func Encode(s *EncoderState, vs ...interface{}) error {
 	for _, v := range vs {
-		pvf := valueToPVField(reflect.ValueOf(v))
+		pvf := valueToPVField(reflect.ValueOf(v), "")
 		if pvf == nil {
 			return fmt.Errorf("can't encode %#v", v)
 		}
@@ -69,7 +90,7 @@ func Encode(s *EncoderState, vs ...interface{}) error {
 }
 func Decode(s *DecoderState, vs ...interface{}) error {
 	for _, v := range vs {
-		if err := valueToPVField(reflect.ValueOf(v)).PVDecode(s); err != nil {
+		if err := valueToPVField(reflect.ValueOf(v), "").PVDecode(s); err != nil {
 			return err
 		}
 	}
@@ -84,7 +105,7 @@ func valueToField(v reflect.Value) (Field, error) {
 	if f, ok := v.Interface().(Fielder); ok {
 		return f.Field(), nil
 	}
-	pvf := valueToPVField(v)
+	pvf := valueToPVField(v, "")
 	if f, ok := pvf.(Fielder); ok {
 		return f.Field(), nil
 	}
