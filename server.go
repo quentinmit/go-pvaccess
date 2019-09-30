@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -120,12 +121,8 @@ func (c *connection) sendCtrl(messageCommand pvdata.PVByte, payloadSize pvdata.P
 }
 
 func (c *connection) encodePayload(payload interface{}) ([]byte, error) {
-	oldBuf := c.encoderState.Buf
-	defer func() {
-		c.encoderState.Buf = oldBuf
-	}()
 	var buf bytes.Buffer
-	c.encoderState.Buf = &buf
+	defer c.encoderState.PushWriter(&buf)()
 	if err := pvdata.Encode(c.encoderState, payload); err != nil {
 		return nil, err
 	}
@@ -214,6 +211,13 @@ func (c *connection) handleServerOnePacket() error {
 	if header.Flags&proto.FLAG_MSG_CTRL == proto.FLAG_MSG_CTRL {
 		return c.handleControlMessage(&header)
 	}
+	data := make([]byte, header.PayloadSize)
+	if _, err := io.ReadFull(c.decoderState.Buf, data); err != nil {
+		return err
+	}
+	// TODO: Segmented packets
+	defer c.decoderState.PushReader(bytes.NewReader(data))()
+
 	switch header.MessageCommand {
 	case proto.APP_CONNECTION_VALIDATION:
 		resp := proto.ConnectionValidationResponse{}

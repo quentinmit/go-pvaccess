@@ -44,6 +44,13 @@ func (s *EncoderState) WriteUint64(v uint64) error {
 	s.ByteOrder.PutUint64(bytes, v)
 	return check(s.Buf.Write(bytes))
 }
+func (s *EncoderState) PushWriter(w Writer) func() {
+	oldBuf := s.Buf
+	s.Buf = w
+	return func() {
+		s.Buf = oldBuf
+	}
+}
 
 type Reader interface {
 	io.Reader
@@ -75,6 +82,11 @@ func (s *DecoderState) ReadUint64() (uint64, error) {
 		return 0, err
 	}
 	return s.ByteOrder.Uint64(bytes), nil
+}
+func (s *DecoderState) PushReader(r Reader) func() {
+	oldBuf := s.Buf
+	s.Buf = r
+	return func() { s.Buf = oldBuf }
 }
 
 type PVField interface {
