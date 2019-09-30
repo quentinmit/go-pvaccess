@@ -349,7 +349,7 @@ func (a PVArray) PVEncode(s *EncoderState) error {
 	}
 	for i := 0; i < a.v.Len(); i++ {
 		item := a.v.Index(i).Addr()
-		pvf := valueToPVField(item, "")
+		pvf := valueToPVField(item)
 		if pvf == nil {
 			return fmt.Errorf("don't know how to encode %#v", item.Interface())
 		}
@@ -377,7 +377,7 @@ func (a PVArray) PVDecode(s *DecoderState) error {
 	}
 	for i := 0; i < int(size); i++ {
 		item := a.v.Index(i).Addr()
-		pvf := valueToPVField(item, "")
+		pvf := valueToPVField(item)
 		if pvf == nil {
 			return fmt.Errorf("don't know how to decode %#v", item.Interface())
 		}
@@ -476,8 +476,8 @@ func (v PVStructure) PVEncode(s *EncoderState) error {
 	t := v.v.Type()
 	for i := 0; i < v.v.NumField(); i++ {
 		item := v.v.Field(i).Addr()
-		tag := t.Field(i).Tag.Get("pvaccess")
-		pvf := valueToPVField(item, tag)
+		_, tags := parseTag(t.Field(i).Tag.Get("pvaccess"))
+		pvf := valueToPVField(item, tagsToOptions(tags)...)
 		if err := pvf.PVEncode(s); err != nil {
 			return err
 		}
