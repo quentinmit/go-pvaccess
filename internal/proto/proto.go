@@ -205,27 +205,28 @@ type CreateChannelResponse struct {
 // message
 
 // Channel RPC
-type ChannelRPCRequestInit struct {
+
+// Subcommands for ChannelRPCRequest
+const (
+	CHANNEL_RPC_INIT    = 0x08
+	CHANNEL_RPC_RPC     = 0x00
+	CHANNEL_RPC_DESTROY = 0x10
+)
+
+type ChannelRPCRequest struct {
 	ServerChannelID pvdata.PVInt
 	RequestID       pvdata.PVInt
-	Subcommand      byte `pvaccess:",always=0x08"`
+	Subcommand      pvdata.PVByte
 	PVRequest       pvdata.PVAny
 }
 type ChannelRPCResponseInit struct {
 	RequestID  pvdata.PVInt
-	Subcommand byte `pvaccess:",always=0x08"`
+	Subcommand pvdata.PVByte `pvaccess:",always=0x08"`
 	Status     pvdata.PVStatus
 }
-type ChannelRPCRequest struct {
-	ServerChannelID int
-	RequestID       int
-	// Subcommand is 0x00 mask for RPC; 0x10 mask for DESTROY
-	Subcommand      byte
-	PVStructureData pvdata.PVAny
-}
 type ChannelRPCResponse struct {
-	RequestID      int
-	Subcommand     byte
+	RequestID      pvdata.PVInt
+	Subcommand     pvdata.PVByte
 	Status         pvdata.PVStatus `pvaccess:",breakonerror"`
 	PVResponseData pvdata.PVAny
 }

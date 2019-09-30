@@ -59,6 +59,11 @@ type connection struct {
 	encoderState   *pvdata.EncoderState
 	decoderState   *pvdata.DecoderState
 	forceByteOrder bool
+	channels       map[pvdata.PVInt]*connChannel
+}
+
+type connChannel struct {
+	name string
 }
 
 func newConn(conn net.Conn) *connection {
@@ -74,6 +79,7 @@ func newConn(conn net.Conn) *connection {
 		decoderState: &pvdata.DecoderState{
 			Buf: bufio.NewReader(conn),
 		},
+		channels: make(map[pvdata.PVInt]*connChannel),
 	}
 }
 
@@ -229,29 +235,59 @@ func (c *connection) handleServerOnePacket() error {
 		if err := c.sendApp(proto.APP_CONNECTION_VALIDATED, &proto.ConnectionValidated{}); err != nil {
 			return err
 		}
-	case proto.APP_CHANNEL_CREATE:
-		var req proto.CreateChannelRequest
-		if err := pvdata.Decode(c.decoderState, &req); err != nil {
-			return err
-		}
-		if err := c.handleCreateChannelRequest(&req); err != nil {
-			return err
-		}
+	}
+	if f, ok := serverDispatch[header.MessageCommand]; ok {
+		return f(c)
 	}
 	return nil
 }
 
-func (c *connection) handleCreateChannelRequest(req *proto.CreateChannelRequest) error {
+var serverDispatch = map[pvdata.PVByte]func(c *connection) error{
+	proto.APP_CHANNEL_CREATE: (*connection).handleCreateChannelRequest,
+	proto.APP_CHANNEL_RPC:    (*connection).handleChannelRPC,
+}
+
+func (c *connection) handleCreateChannelRequest() error {
+	var req proto.CreateChannelRequest
+	if err := pvdata.Decode(c.decoderState, &req); err != nil {
+		return err
+	}
 	var resp proto.CreateChannelResponse
 	if len(req.Channels) == 1 {
 		ch := req.Channels[0]
 		c.log.Printf("received request to create channel %q as client ID %x", ch.ChannelName, ch.ClientChannelID)
 		resp.ClientChannelID = ch.ClientChannelID
-		resp.Status.Type = pvdata.PVStatus_ERROR
-		resp.Status.Message = pvdata.PVString(fmt.Sprintf("unknown channel %q", ch.ChannelName))
+		if ch.ChannelName == "server" {
+			resp.ServerChannelID = ch.ClientChannelID
+			c.channels[ch.ClientChannelID] = &connChannel{
+				name: ch.ChannelName,
+			}
+		} else {
+			resp.Status.Type = pvdata.PVStatus_ERROR
+			resp.Status.Message = pvdata.PVString(fmt.Sprintf("unknown channel %q", ch.ChannelName))
+		}
 	} else {
 		resp.Status.Type = pvdata.PVStatus_ERROR
 		resp.Status.Message = "wrong number of channels"
 	}
 	return c.sendApp(proto.APP_CHANNEL_CREATE, &resp)
+}
+
+func (c *connection) handleChannelRPC() error {
+	var req proto.ChannelRPCRequest
+	if err := pvdata.Decode(c.decoderState, &req); err != nil {
+		return err
+	}
+	switch req.Subcommand {
+	case proto.CHANNEL_RPC_INIT:
+		c.log.Printf("received request to init channel RPC with body %#v", req.PVRequest)
+	}
+	return c.sendApp(proto.APP_CHANNEL_RPC, &proto.ChannelRPCResponseInit{
+		RequestID:  req.RequestID,
+		Subcommand: req.Subcommand,
+		Status: pvdata.PVStatus{
+			Type:    pvdata.PVStatus_ERROR,
+			Message: pvdata.PVString("don't know how to execute that RPC"),
+		},
+	})
 }
