@@ -173,27 +173,62 @@ func (c *CreateChannelRequest) PVDecode(s *pvdata.DecoderState) error {
 type CreateChannelResponse struct {
 	ClientChannelID pvdata.PVInt
 	ServerChannelID pvdata.PVInt
-	Status          pvdata.PVStatus
+	Status          pvdata.PVStatus `pvaccess:",breakonerror"`
 	AccessRights    pvdata.PVShort
 }
 
-func (c CreateChannelResponse) PVEncode(s *pvdata.EncoderState) error {
-	if err := pvdata.Encode(s, &c.ClientChannelID, &c.ServerChannelID, &c.Status); err != nil {
-		return err
-	}
-	switch c.Status.Type {
-	case pvdata.PVStatus_OK, pvdata.PVStatus_WARNING:
-		return pvdata.Encode(s, &c.AccessRights)
-	}
-	return nil
+// destroyChannelRequest
+// destroyChannelResponse
+// channelGetRequestInit
+// channelGetResponseInit
+// channelGetRequest
+// channelGetResponse
+// channelPutRequestInit
+// channelPutResponseInit
+// channelPutGetRequestInit
+// channelPutGetResponseInit
+// channelArrayRequestInit
+// channelArrayResponseInit
+// channelGetArrayRequest
+// channelGetArrayResponse
+// channelPutArrayRequest
+// channelPutArrayResponse
+// channelSetLengthRequest
+// channelSetLengthResponse
+// destroyRequest
+// channelProcessRequestInit
+// channelProcessResponseInit
+// channelProcessRequest
+// channelProcessResponse
+// channelGetFieldRequest
+// channelGetFieldResponse
+// message
+
+// Channel RPC
+type ChannelRPCRequestInit struct {
+	ServerChannelID pvdata.PVInt
+	RequestID       pvdata.PVInt
+	Subcommand      byte `pvaccess:",always=0x08"`
+	PVRequest       pvdata.PVAny
 }
-func (c *CreateChannelResponse) PVDecode(s *pvdata.DecoderState) error {
-	if err := pvdata.Decode(s, &c.ClientChannelID, &c.ServerChannelID, &c.Status); err != nil {
-		return err
-	}
-	switch c.Status.Type {
-	case pvdata.PVStatus_OK, pvdata.PVStatus_WARNING:
-		return pvdata.Decode(s, &c.AccessRights)
-	}
-	return nil
+type ChannelRPCResponseInit struct {
+	RequestID  pvdata.PVInt
+	Subcommand byte `pvaccess:",always=0x08"`
+	Status     pvdata.PVStatus
 }
+type ChannelRPCRequest struct {
+	ServerChannelID int
+	RequestID       int
+	// Subcommand is 0x00 mask for RPC; 0x10 mask for DESTROY
+	Subcommand      byte
+	PVStructureData pvdata.PVAny
+}
+type ChannelRPCResponse struct {
+	RequestID      int
+	Subcommand     byte
+	Status         pvdata.PVStatus `pvaccess:",breakonerror"`
+	PVResponseData pvdata.PVAny
+}
+
+// cancelRequest
+// originTag

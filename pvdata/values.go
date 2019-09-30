@@ -481,6 +481,11 @@ func (v PVStructure) PVEncode(s *EncoderState) error {
 		if err := pvf.PVEncode(s); err != nil {
 			return err
 		}
+		if _, ok := tags["breakonerror"]; ok {
+			if pvf.(*PVStatus).Type > PVStatus_WARNING {
+				return nil
+			}
+		}
 	}
 	return nil
 }
@@ -488,10 +493,17 @@ func (v PVStructure) PVDecode(s *DecoderState) error {
 	if !v.v.IsValid() {
 		return errors.New("zero PVStructure is not usable")
 	}
+	t := v.v.Type()
 	for i := 0; i < v.v.NumField(); i++ {
 		item := v.v.Field(i).Addr()
+		_, tags := parseTag(t.Field(i).Tag.Get("pvaccess"))
 		if err := Decode(s, item.Interface()); err != nil {
 			return err
+		}
+		if _, ok := tags["breakonerror"]; ok {
+			if item.Interface().(*PVStatus).Type > PVStatus_WARNING {
+				return nil
+			}
 		}
 	}
 	return nil
