@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quentinmit/go-pvaccess/internal/connection"
@@ -49,7 +50,9 @@ func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
 
 type serverConn struct {
 	*connection.Connection
-	srv      *Server
+	srv *Server
+
+	mu       sync.Mutex
 	channels map[pvdata.PVInt]*connChannel
 }
 
@@ -92,6 +95,11 @@ func (c *serverConn) serve() error {
 
 	for {
 		if err := c.handleServerOnePacket(); err != nil {
+			if err == io.EOF {
+				// TODO: Cleanup resources (requests, channels, etc.)
+				c.Log.Printf("client went away, closing connection")
+				return nil
+			}
 			return err
 		}
 	}
@@ -135,10 +143,12 @@ func (c *serverConn) handleCreateChannelRequest(msg *connection.Message) error {
 		resp.ClientChannelID = ch.ClientChannelID
 		if ch.ChannelName == "server" {
 			resp.ServerChannelID = ch.ClientChannelID
+			c.mu.Lock()
 			c.channels[ch.ClientChannelID] = &connChannel{
 				name:      ch.ChannelName,
 				handleRPC: c.handleServerRPC,
 			}
+			c.mu.Unlock()
 		} else {
 			resp.Status.Type = pvdata.PVStatus_ERROR
 			resp.Status.Message = pvdata.PVString(fmt.Sprintf("unknown channel %q", ch.ChannelName))
@@ -214,7 +224,9 @@ func (c *serverConn) handleChannelRPC(msg *connection.Message) error {
 		RequestID:  req.RequestID,
 		Subcommand: req.Subcommand,
 	}
+	c.mu.Lock()
 	channel := c.channels[req.ServerChannelID]
+	c.mu.Unlock()
 	c.Log.Printf("channel = %#v", channel)
 	if channel != nil && channel.handleRPC != nil {
 		switch req.Subcommand {
