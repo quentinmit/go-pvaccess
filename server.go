@@ -44,7 +44,7 @@ func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
 			}
 			return err
 		}
-		go srv.handleConnection(conn)
+		go srv.handleConnection(ctx, conn)
 	}
 }
 
@@ -58,7 +58,7 @@ type serverConn struct {
 
 type connChannel struct {
 	name      string
-	handleRPC func(args pvdata.PVStructure) (response interface{}, status pvdata.PVStatus)
+	handleRPC func(ctx context.Context, args pvdata.PVStructure) (response interface{}, status pvdata.PVStatus)
 }
 
 func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
@@ -70,16 +70,17 @@ func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
 	}
 }
 
-func (srv *Server) handleConnection(conn net.Conn) {
+func (srv *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 	c := srv.newConn(conn)
 	c.Log.Printf("new connection")
-	if err := c.serve(); err != nil {
+	if err := c.serve(ctx); err != nil {
 		c.Log.Printf("error on connection %v: %v", conn.RemoteAddr(), err)
 	}
 }
 
-func (c *serverConn) serve() error {
+func (c *serverConn) serve(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
 	c.Version = pvdata.PVByte(2)
 	// 0 = Ignore byte order field in header
 	if err := c.SendCtrl(proto.CTRL_SET_BYTE_ORDER, 0); err != nil {
@@ -94,8 +95,9 @@ func (c *serverConn) serve() error {
 	c.SendApp(proto.APP_CONNECTION_VALIDATION, &req)
 
 	for {
-		if err := c.handleServerOnePacket(); err != nil {
+		if err := c.handleServerOnePacket(ctx); err != nil {
 			if err == io.EOF {
+				cancel()
 				// TODO: Cleanup resources (requests, channels, etc.)
 				c.Log.Printf("client went away, closing connection")
 				return nil
@@ -104,24 +106,24 @@ func (c *serverConn) serve() error {
 		}
 	}
 }
-func (c *serverConn) handleServerOnePacket() error {
+func (c *serverConn) handleServerOnePacket(ctx context.Context) error {
 	msg, err := c.Next()
 	if err != nil {
 		return err
 	}
 	if f, ok := serverDispatch[msg.Header.MessageCommand]; ok {
-		return f(c, msg)
+		return f(c, ctx, msg)
 	}
 	return nil
 }
 
-var serverDispatch = map[pvdata.PVByte]func(c *serverConn, msg *connection.Message) error{
+var serverDispatch = map[pvdata.PVByte]func(c *serverConn, ctx context.Context, msg *connection.Message) error{
 	proto.APP_CONNECTION_VALIDATION: (*serverConn).handleConnectionValidation,
 	proto.APP_CHANNEL_CREATE:        (*serverConn).handleCreateChannelRequest,
 	proto.APP_CHANNEL_RPC:           (*serverConn).handleChannelRPC,
 }
 
-func (c *serverConn) handleConnectionValidation(msg *connection.Message) error {
+func (c *serverConn) handleConnectionValidation(_ context.Context, msg *connection.Message) error {
 	var resp proto.ConnectionValidationResponse
 	if err := msg.Decode(&resp); err != nil {
 		return err
@@ -131,7 +133,7 @@ func (c *serverConn) handleConnectionValidation(msg *connection.Message) error {
 	return c.SendApp(proto.APP_CONNECTION_VALIDATED, &proto.ConnectionValidated{})
 }
 
-func (c *serverConn) handleCreateChannelRequest(msg *connection.Message) error {
+func (c *serverConn) handleCreateChannelRequest(_ context.Context, msg *connection.Message) error {
 	var req proto.CreateChannelRequest
 	if err := msg.Decode(&req); err != nil {
 		return err
@@ -160,7 +162,7 @@ func (c *serverConn) handleCreateChannelRequest(msg *connection.Message) error {
 	return c.SendApp(proto.APP_CHANNEL_CREATE, &resp)
 }
 
-func (c *serverConn) handleServerRPC(args pvdata.PVStructure) (response interface{}, status pvdata.PVStatus) {
+func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure) (response interface{}, status pvdata.PVStatus) {
 	if strings.HasPrefix(args.ID, "epics:nt/NTURI:1.") {
 		if q, ok := args.SubField("query").(*pvdata.PVStructure); ok {
 			args = *q
@@ -214,7 +216,7 @@ func (c *serverConn) handleServerRPC(args pvdata.PVStructure) (response interfac
 	}
 }
 
-func (c *serverConn) handleChannelRPC(msg *connection.Message) error {
+func (c *serverConn) handleChannelRPC(ctx context.Context, msg *connection.Message) error {
 	var req proto.ChannelRPCRequest
 	if err := msg.Decode(&req); err != nil {
 		return err
@@ -237,7 +239,7 @@ func (c *serverConn) handleChannelRPC(msg *connection.Message) error {
 		c.Log.Printf("%T", req.PVRequest.Data)
 		if args, ok := req.PVRequest.Data.(pvdata.PVStructure); ok {
 			c.Log.Printf("received request to execute channel RPC with body %v", args)
-			resp, status := channel.handleRPC(args)
+			resp, status := channel.handleRPC(ctx, args)
 			r := &proto.ChannelRPCResponse{
 				RequestID:      req.RequestID,
 				Subcommand:     req.Subcommand,

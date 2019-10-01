@@ -3,6 +3,7 @@ package pvaccess
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"io"
 	"testing"
 
@@ -38,7 +39,7 @@ func TestConnectionBanner(t *testing.T) {
 		bufio.NewWriter(&buf),
 	}
 	c := (&Server{}).newConn(conn)
-	if err := c.serve(); err != io.EOF {
+	if err := c.serve(context.Background()); err != nil {
 		t.Errorf("serve failed: %v", err)
 	}
 	conn.Flush()
