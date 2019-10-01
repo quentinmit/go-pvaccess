@@ -151,7 +151,7 @@ func (c *serverConn) handleServerRPC(args pvdata.PVAny) (response pvdata.PVAny, 
 	if args, ok := args.Data.(pvdata.PVStructure); ok {
 		if field := args.Get("field"); field != nil {
 			if field, ok := field.(*pvdata.PVBoolean); ok {
-				c.Log.Printf("server({field=%s})", field)
+				c.Log.Printf("server({field=%v})", field)
 			} else {
 				c.Log.Printf("server({field not PVBoolean})")
 			}

@@ -639,9 +639,10 @@ type Field struct {
 	// The other special codes will be inferred from HasID, HasTag
 	TypeCode      byte
 	HasID, HasTag bool
-	ID            PVString
+	ID            PVUShort
 	Tag           PVInt // FIXME: Figure out size of tag
 	Size          PVSize
+	StructType    PVString
 	Fields        []StructFieldDesc
 }
 
@@ -705,8 +706,7 @@ func (f *Field) PVEncode(s *EncoderState) error {
 		}
 	}
 	if f.TypeCode == STRUCT || f.TypeCode == UNION {
-		// TODO: Is this the same as the top-level ID?
-		if err := Encode(s, f.ID, f.Fields); err != nil {
+		if err := Encode(s, f.StructType, f.Fields); err != nil {
 			return err
 		}
 	}
@@ -758,9 +758,7 @@ func (f *Field) PVDecode(s *DecoderState) error {
 		}
 	}
 	if f.TypeCode == STRUCT || f.TypeCode == UNION {
-		// TODO: Is this the same as the top-level ID?
-		// (NO, in one example top-level ID was "\x00" but struct ID was "")
-		if err := Decode(s, &f.ID, &f.Fields); err != nil {
+		if err := Decode(s, &f.StructType, &f.Fields); err != nil {
 			return err
 		}
 
@@ -812,6 +810,7 @@ func (f Field) createZero() (PVField, error) {
 		}
 	}
 	if f.TypeCode == STRUCT {
+		// TODO: Support NT types specially?
 		var fields []reflect.StructField
 		for _, field := range f.Fields {
 			prototype, err := field.Field.createZero()
