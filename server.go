@@ -52,7 +52,7 @@ type serverConn struct {
 
 type connChannel struct {
 	name      string
-	handleRPC func(args pvdata.PVAny) (response pvdata.PVAny, status pvdata.PVStatus)
+	handleRPC func(args pvdata.PVStructure) (response interface{}, status pvdata.PVStatus)
 }
 
 func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
@@ -147,21 +147,17 @@ func (c *serverConn) handleCreateChannelRequest(msg *connection.Message) error {
 	return c.SendApp(proto.APP_CHANNEL_CREATE, &resp)
 }
 
-func (c *serverConn) handleServerRPC(args pvdata.PVAny) (response pvdata.PVAny, status pvdata.PVStatus) {
-	if args, ok := args.Data.(pvdata.PVStructure); ok {
-		if field := args.Get("field"); field != nil {
-			if field, ok := field.(*pvdata.PVBoolean); ok {
-				c.Log.Printf("server({field=%v})", field)
-			} else {
-				c.Log.Printf("server({field not PVBoolean})")
-			}
+func (c *serverConn) handleServerRPC(args pvdata.PVStructure) (response interface{}, status pvdata.PVStatus) {
+	if field := args.SubField("field"); field != nil {
+		if field, ok := field.(*pvdata.PVBoolean); ok {
+			c.Log.Printf("server({field=%v})", field)
 		} else {
-			c.Log.Printf("server({})")
+			c.Log.Printf("server({field not PVBoolean})")
 		}
 	} else {
-		c.Log.Printf("server()")
+		c.Log.Printf("server(%s)", args)
 	}
-	return pvdata.PVAny{}, pvdata.PVStatus{
+	return struct{}{}, pvdata.PVStatus{
 		Type:    pvdata.PVStatus_ERROR,
 		Message: pvdata.PVString("invalid argument"),
 	}
@@ -185,14 +181,17 @@ func (c *serverConn) handleChannelRPC(msg *connection.Message) error {
 			c.Log.Printf("received request to init channel RPC with body %v", req.PVRequest.Data)
 			return c.SendApp(proto.APP_CHANNEL_RPC, resp)
 		}
-		c.Log.Printf("received request to execute channel RPC with body %v", req.PVRequest.Data)
-		data, status := channel.handleRPC(req.PVRequest)
-		return c.SendApp(proto.APP_CHANNEL_RPC, &proto.ChannelRPCResponse{
-			RequestID:      req.RequestID,
-			Subcommand:     req.Subcommand,
-			Status:         status,
-			PVResponseData: data,
-		})
+		c.Log.Printf("%T", req.PVRequest.Data)
+		if args, ok := req.PVRequest.Data.(pvdata.PVStructure); ok {
+			c.Log.Printf("received request to execute channel RPC with body %v", args)
+			resp, status := channel.handleRPC(args)
+			return c.SendApp(proto.APP_CHANNEL_RPC, &proto.ChannelRPCResponse{
+				RequestID:      req.RequestID,
+				Subcommand:     req.Subcommand,
+				Status:         status,
+				PVResponseData: pvdata.NewPVAny(resp),
+			})
+		}
 	}
 	c.Log.Printf("request to RPC on channel %q which cannot RPC", channel.name)
 	resp.Status = pvdata.PVStatus{

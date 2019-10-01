@@ -522,9 +522,34 @@ func (v PVStructure) PVDecode(s *DecoderState) error {
 	return nil
 }
 func (v PVStructure) String() string {
-	return fmt.Sprintf("%s {%v}", v.name, v.v.Interface())
+	return fmt.Sprintf("%s%v", v.name, v.v.Interface())
 }
-func (v PVStructure) Get(name string) PVField {
+
+func (v PVStructure) Field() Field {
+	var fields []StructFieldDesc
+	t := v.v.Type()
+	for i := 0; i < v.v.NumField(); i++ {
+		name, _ := parseTag(t.Field(i).Tag.Get("pvaccess"))
+		if name == "" {
+			name = t.Field(i).Name
+		}
+		f, err := valueToField(v.v.Field(i))
+		if err != nil {
+			f = Field{}
+		}
+		fields = append(fields, StructFieldDesc{
+			Name:  name,
+			Field: f,
+		})
+	}
+	return Field{
+		TypeCode:   STRUCT,
+		StructType: PVString(v.name),
+		Fields:     fields,
+	}
+}
+
+func (v PVStructure) SubField(name string) PVField {
 	t := v.v.Type()
 	for i := 0; i < v.v.NumField(); i++ {
 		got, _ := parseTag(t.Field(i).Tag.Get("pvaccess"))
@@ -545,6 +570,12 @@ func (v PVStructure) Get(name string) PVField {
 // PVAny is a variant union, encoded as a field description, followed by data
 type PVAny struct {
 	Data PVField
+}
+
+func NewPVAny(data interface{}) PVAny {
+	return PVAny{
+		valueToPVField(reflect.ValueOf(data)),
+	}
 }
 
 func (v PVAny) PVEncode(s *EncoderState) error {
@@ -812,11 +843,13 @@ func (f Field) createZero() (PVField, error) {
 	if f.TypeCode == STRUCT {
 		// TODO: Support NT types specially?
 		var fields []reflect.StructField
+		var zeros []PVField
 		for _, field := range f.Fields {
 			prototype, err := field.Field.createZero()
 			if err != nil {
 				return nil, err
 			}
+			zeros = append(zeros, prototype)
 			name := field.Name
 			if len(name) > 0 {
 				name = strings.ToUpper(name[0:1]) + name[1:]
@@ -831,10 +864,16 @@ func (f Field) createZero() (PVField, error) {
 				Tag:  reflect.StructTag("pvaccess:\"" + field.Name + "\""),
 			})
 		}
-		pvf := valueToPVField(reflect.New(reflect.StructOf(fields)))
-		if pvf != nil {
-			return pvf, nil
+		val := reflect.New(reflect.StructOf(fields))
+		for i, zero := range zeros {
+			v := reflect.ValueOf(zero)
+			if v.Kind() == reflect.Ptr {
+				v = v.Elem()
+			}
+			val.Elem().Field(i).Set(v)
 		}
+		pvs := PVStructure{string(f.StructType), val.Elem()}
+		return pvs, nil
 	}
 	return nil, fmt.Errorf("don't know how to create zero value for %#v", f)
 }
