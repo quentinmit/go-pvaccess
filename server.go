@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/quentinmit/go-pvaccess/internal/connection"
@@ -148,16 +151,54 @@ func (c *serverConn) handleCreateChannelRequest(msg *connection.Message) error {
 }
 
 func (c *serverConn) handleServerRPC(args pvdata.PVStructure) (response interface{}, status pvdata.PVStatus) {
-	if field := args.SubField("field"); field != nil {
-		if field, ok := field.(*pvdata.PVBoolean); ok {
-			c.Log.Printf("server({field=%v})", field)
+	if strings.HasPrefix(args.ID, "epics:nt/NTURI:1.") {
+		if q, ok := args.SubField("query").(*pvdata.PVStructure); ok {
+			args = *q
 		} else {
-			c.Log.Printf("server({field not PVBoolean})")
+			return struct{}{}, pvdata.PVStatus{
+				Type:    pvdata.PVStatus_ERROR,
+				Message: pvdata.PVString("invalid argument"),
+			}
 		}
-	} else {
-		c.Log.Printf("server(%s)", args)
 	}
-	return struct{}{}, pvdata.PVStatus{
+
+	if args.SubField("help") != nil {
+		// TODO
+	}
+
+	var op pvdata.PVString
+	if v, ok := args.SubField("op").(*pvdata.PVString); ok {
+		op = *v
+	}
+
+	c.Log.Printf("op = %s", op)
+
+	switch op {
+	case "channels":
+	case "info":
+		hostname, _ := os.Hostname()
+		info := &struct {
+			Process   string `pvaccess:"process"`
+			StartTime string `pvaccess:"startTime"`
+			Version   string `pvaccess:"version"`
+			ImplLang  string `pvaccess:"implLang"`
+			Host      string `pvaccess:"host"`
+			OS        string `pvaccess:"os"`
+			Arch      string `pvaccess:"arch"`
+		}{
+			os.Args[0],
+			"sometime",
+			"1.0",
+			"Go",
+			hostname,
+			runtime.GOOS,
+			runtime.GOARCH,
+		}
+		c.Log.Printf("returning info %+v", info)
+		return info, pvdata.PVStatus{}
+	}
+
+	return &struct{}{}, pvdata.PVStatus{
 		Type:    pvdata.PVStatus_ERROR,
 		Message: pvdata.PVString("invalid argument"),
 	}
@@ -185,12 +226,13 @@ func (c *serverConn) handleChannelRPC(msg *connection.Message) error {
 		if args, ok := req.PVRequest.Data.(pvdata.PVStructure); ok {
 			c.Log.Printf("received request to execute channel RPC with body %v", args)
 			resp, status := channel.handleRPC(args)
-			return c.SendApp(proto.APP_CHANNEL_RPC, &proto.ChannelRPCResponse{
+			r := &proto.ChannelRPCResponse{
 				RequestID:      req.RequestID,
 				Subcommand:     req.Subcommand,
 				Status:         status,
 				PVResponseData: pvdata.NewPVAny(resp),
-			})
+			}
+			return c.SendApp(proto.APP_CHANNEL_RPC, r)
 		}
 	}
 	c.Log.Printf("request to RPC on channel %q which cannot RPC", channel.name)

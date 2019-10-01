@@ -480,8 +480,8 @@ func (v PVBoundedString) Field() Field {
 // Structure types
 
 type PVStructure struct {
-	name string
-	v    reflect.Value
+	ID string
+	v  reflect.Value
 }
 
 // TODO: Support bitfields for partial pack/unpack
@@ -522,7 +522,7 @@ func (v PVStructure) PVDecode(s *DecoderState) error {
 	return nil
 }
 func (v PVStructure) String() string {
-	return fmt.Sprintf("%s%v", v.name, v.v.Interface())
+	return fmt.Sprintf("%s%+v", v.ID, v.v.Interface())
 }
 
 func (v PVStructure) Field() Field {
@@ -535,7 +535,7 @@ func (v PVStructure) Field() Field {
 		}
 		f, err := valueToField(v.v.Field(i))
 		if err != nil {
-			f = Field{}
+			panic(err)
 		}
 		fields = append(fields, StructFieldDesc{
 			Name:  name,
@@ -544,7 +544,7 @@ func (v PVStructure) Field() Field {
 	}
 	return Field{
 		TypeCode:   STRUCT,
-		StructType: PVString(v.name),
+		StructType: PVString(v.ID),
 		Fields:     fields,
 	}
 }
@@ -737,7 +737,7 @@ func (f *Field) PVEncode(s *EncoderState) error {
 		}
 	}
 	if f.TypeCode == STRUCT || f.TypeCode == UNION {
-		if err := Encode(s, f.StructType, f.Fields); err != nil {
+		if err := Encode(s, &f.StructType, f.Fields); err != nil {
 			return err
 		}
 	}

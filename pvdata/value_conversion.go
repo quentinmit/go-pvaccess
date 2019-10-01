@@ -90,6 +90,9 @@ func valueToPVField(v reflect.Value, options ...option) PVField {
 		if i, ok := i.(PVField); ok {
 			return i
 		}
+		if v.Kind() != reflect.Ptr && v.CanAddr() {
+			i = v.Addr().Interface()
+		}
 		switch i := i.(type) {
 		case *PVField:
 			return *i
@@ -120,14 +123,15 @@ func valueToPVField(v reflect.Value, options ...option) PVField {
 		}
 	}
 	if v.Kind() == reflect.Ptr {
-		switch v.Elem().Kind() {
-		case reflect.Slice:
-			return PVArray{false, v.Elem()}
-		case reflect.Array:
-			return PVArray{true, v.Elem()}
-		case reflect.Struct:
-			return PVStructure{"", v.Elem()}
-		}
+		v = v.Elem()
+	}
+	switch v.Kind() {
+	case reflect.Slice:
+		return PVArray{false, v}
+	case reflect.Array:
+		return PVArray{true, v}
+	case reflect.Struct:
+		return PVStructure{"", v}
 	}
 	return nil
 }
@@ -138,7 +142,7 @@ func Encode(s *EncoderState, vs ...interface{}) error {
 	for _, v := range vs {
 		pvf := valueToPVField(reflect.ValueOf(v))
 		if pvf == nil {
-			return fmt.Errorf("can't encode %#v", v)
+			return fmt.Errorf("can't encode %T %+v", v, v)
 		}
 		if err := pvf.PVEncode(s); err != nil {
 			return err

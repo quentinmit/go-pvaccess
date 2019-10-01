@@ -102,6 +102,9 @@ func (c *Connection) encodePayload(payload interface{}) ([]byte, error) {
 func (c *Connection) SendApp(messageCommand pvdata.PVByte, payload interface{}) error {
 	defer c.flush()
 	bytes, err := c.encodePayload(payload)
+	if err != nil {
+		return err
+	}
 	flags := proto.FLAG_MSG_APP | c.Direction
 	if c.encoderState.ByteOrder == binary.BigEndian {
 		flags |= proto.FLAG_BO_BE
