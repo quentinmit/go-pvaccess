@@ -208,8 +208,8 @@ type CreateChannelResponse struct {
 
 // Subcommands for ChannelRPCRequest
 const (
-	CHANNEL_RPC_INIT    = 0x08
-	CHANNEL_RPC_RPC     = 0x00
+	CHANNEL_RPC_INIT = 0x08
+	// Destroy is a flag on top of another subcommand
 	CHANNEL_RPC_DESTROY = 0x10
 )
 

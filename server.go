@@ -168,7 +168,6 @@ func (c *serverConn) handleServerRPC(args pvdata.PVAny) (response pvdata.PVAny, 
 }
 
 func (c *serverConn) handleChannelRPC(msg *connection.Message) error {
-	c.Log.Printf("CHANNEL_RPC(%x)", msg.Data)
 	var req proto.ChannelRPCRequest
 	if err := msg.Decode(&req); err != nil {
 		return err
@@ -185,16 +184,15 @@ func (c *serverConn) handleChannelRPC(msg *connection.Message) error {
 		case proto.CHANNEL_RPC_INIT:
 			c.Log.Printf("received request to init channel RPC with body %v", req.PVRequest.Data)
 			return c.SendApp(proto.APP_CHANNEL_RPC, resp)
-		case proto.CHANNEL_RPC_RPC:
-			c.Log.Printf("received request to execute channel RPC with body %v", req.PVRequest.Data)
-			data, status := channel.handleRPC(req.PVRequest)
-			return c.SendApp(proto.APP_CHANNEL_RPC, &proto.ChannelRPCResponse{
-				RequestID:      req.RequestID,
-				Subcommand:     req.Subcommand,
-				Status:         status,
-				PVResponseData: data,
-			})
 		}
+		c.Log.Printf("received request to execute channel RPC with body %v", req.PVRequest.Data)
+		data, status := channel.handleRPC(req.PVRequest)
+		return c.SendApp(proto.APP_CHANNEL_RPC, &proto.ChannelRPCResponse{
+			RequestID:      req.RequestID,
+			Subcommand:     req.Subcommand,
+			Status:         status,
+			PVResponseData: data,
+		})
 	}
 	c.Log.Printf("request to RPC on channel %q which cannot RPC", channel.name)
 	resp.Status = pvdata.PVStatus{
