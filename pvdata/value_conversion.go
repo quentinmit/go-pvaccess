@@ -164,16 +164,16 @@ func Decode(s *DecoderState, vs ...interface{}) error {
 }
 
 type Fielder interface {
-	Field() Field
+	Field() (Field, error)
 }
 
 func valueToField(v reflect.Value) (Field, error) {
 	if f, ok := v.Interface().(Fielder); ok {
-		return f.Field(), nil
+		return f.Field()
 	}
 	pvf := valueToPVField(v)
 	if f, ok := pvf.(Fielder); ok {
-		return f.Field(), nil
+		return f.Field()
 	}
 	return Field{}, fmt.Errorf("don't know how to describe %#v", v.Interface())
 }
