@@ -4,19 +4,19 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"syscall"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/quentinmit/go-pvaccess/internal/proto"
 	"github.com/quentinmit/go-pvaccess/pvdata"
 )
 
 type Connection struct {
-	Log       *log.Logger
+	Log       *log.Entry
 	Version   pvdata.PVByte
 	Direction pvdata.PVUByte
 
@@ -27,12 +27,12 @@ type Connection struct {
 }
 
 func New(conn io.ReadWriter, direction pvdata.PVUByte) *Connection {
-	var prefix string
+	f := make(log.Fields)
 	if conn, ok := conn.(net.Conn); ok {
-		prefix = fmt.Sprintf("[%s] ", conn.RemoteAddr())
+		f["remote_addr"] = conn.RemoteAddr()
 	}
 	return &Connection{
-		Log:       log.New(os.Stderr, prefix, log.LstdFlags|log.Lshortfile),
+		Log:       log.WithFields(f),
 		Direction: direction,
 		conn:      conn,
 		encoderState: &pvdata.EncoderState{
@@ -76,7 +76,7 @@ func (c *Connection) flush() error {
 
 func (c *Connection) SendCtrl(messageCommand pvdata.PVByte, payloadSize pvdata.PVInt) error {
 	defer c.flush()
-	c.Log.Printf("sending control message %x with payload %x", messageCommand, payloadSize)
+	c.Log.Debugf("sending control message %x with payload %x", messageCommand, payloadSize)
 	flags := proto.FLAG_MSG_CTRL | c.Direction
 	if c.encoderState.ByteOrder == binary.BigEndian {
 		flags |= proto.FLAG_BO_BE
@@ -115,7 +115,7 @@ func (c *Connection) SendApp(messageCommand pvdata.PVByte, payload interface{}) 
 		MessageCommand: messageCommand,
 		PayloadSize:    pvdata.PVInt(len(bytes)),
 	}
-	c.Log.Printf("sending app message %x with payload size %d", messageCommand, len(bytes))
+	c.Log.Debugf("sending app message %x with payload size %d", messageCommand, len(bytes))
 	if err := h.PVEncode(c.encoderState); err != nil {
 		return err
 	}
@@ -136,7 +136,7 @@ func (c *Connection) handleControlMessage(header *proto.PVAccessHeader) error {
 	case proto.CTRL_ECHO_REQUEST:
 		return c.SendCtrl(proto.CTRL_ECHO_RESPONSE, header.PayloadSize)
 	default:
-		c.Log.Printf("ignoring unknown control message %02x", header.MessageCommand)
+		c.Log.Warnf("ignoring unknown control message %02x", header.MessageCommand)
 	}
 	return nil
 }
@@ -157,7 +157,7 @@ func (c *Connection) Next() (*Message, error) {
 		if err := pvdata.Decode(c.decoderState, &header); err != nil {
 			return nil, err
 		}
-		c.Log.Printf("received packet %#v", header)
+		c.Log.Debugf("received packet %#v", header)
 		if header.Flags&proto.FLAG_MSG_CTRL == proto.FLAG_MSG_CTRL {
 			if err := c.handleControlMessage(&header); err != nil {
 				return nil, err

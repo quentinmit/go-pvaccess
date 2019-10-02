@@ -108,15 +108,16 @@ func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
 		Connection: c,
 		srv:        srv,
 		channels:   make(map[pvdata.PVInt]*connChannel),
+		requests:   make(map[pvdata.PVInt]*request),
 	}
 }
 
 func (srv *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 	c := srv.newConn(conn)
-	c.Log.Printf("new connection")
+	c.Log.Infof("new connection")
 	if err := c.serve(ctx); err != nil {
-		c.Log.Printf("error on connection %v: %v", conn.RemoteAddr(), err)
+		c.Log.Errorf("error on connection %v: %v", conn.RemoteAddr(), err)
 	}
 }
 
@@ -140,7 +141,7 @@ func (c *serverConn) serve(ctx context.Context) error {
 			if err == io.EOF {
 				cancel()
 				// TODO: Cleanup resources (requests, channels, etc.)
-				c.Log.Printf("client went away, closing connection")
+				c.Log.Infof("client went away, closing connection")
 				return nil
 			}
 			return err
@@ -169,7 +170,7 @@ func (c *serverConn) handleConnectionValidation(_ context.Context, msg *connecti
 	if err := msg.Decode(&resp); err != nil {
 		return err
 	}
-	c.Log.Printf("received connection validation %#v", resp)
+	c.Log.Infof("received connection validation %#v", resp)
 	// TODO: Implement flow control
 	return c.SendApp(proto.APP_CONNECTION_VALIDATED, &proto.ConnectionValidated{})
 }
@@ -182,7 +183,7 @@ func (c *serverConn) handleCreateChannelRequest(_ context.Context, msg *connecti
 	var resp proto.CreateChannelResponse
 	if len(req.Channels) == 1 {
 		ch := req.Channels[0]
-		c.Log.Printf("received request to create channel %q as client ID %x", ch.ChannelName, ch.ClientChannelID)
+		c.Log.Infof("received request to create channel %q as client channel ID %x", ch.ChannelName, ch.ClientChannelID)
 		resp.ClientChannelID = ch.ClientChannelID
 		if ch.ChannelName == "server" {
 			resp.ServerChannelID = ch.ClientChannelID
@@ -224,7 +225,7 @@ func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure)
 		op = *v
 	}
 
-	c.Log.Printf("op = %s", op)
+	c.Log.Debugf("op = %s", op)
 
 	switch op {
 	case "channels":
@@ -247,7 +248,7 @@ func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure)
 			runtime.GOOS,
 			runtime.GOARCH,
 		}
-		c.Log.Printf("returning info %+v", info)
+		c.Log.Debugf("returning info %+v", info)
 		return info, pvdata.PVStatus{}
 	}
 
@@ -265,7 +266,7 @@ func (c *serverConn) handleChannelRPC(ctx context.Context, msg *connection.Messa
 	if err := msg.Decode(&req); err != nil {
 		return err
 	}
-	c.Log.Printf("CHANNEL_RPC(%#v)", req)
+	c.Log.Debugf("CHANNEL_RPC(%#v)", req)
 	resp := &proto.ChannelRPCResponseInit{
 		RequestID:  req.RequestID,
 		Subcommand: req.Subcommand,
@@ -273,6 +274,9 @@ func (c *serverConn) handleChannelRPC(ctx context.Context, msg *connection.Messa
 	err := c.handleChannelRPCBody(ctx, req)
 	if err == asyncOperation {
 		return nil
+	}
+	if err != nil {
+		c.Log.Warnf("Channel RPC failed: %v", err)
 	}
 	resp.Status = errorToStatus(err)
 	return c.SendApp(proto.APP_CHANNEL_RPC, resp)
