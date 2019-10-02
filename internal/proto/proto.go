@@ -35,16 +35,7 @@ func (v *PVAccessHeader) PVEncode(s *pvdata.EncoderState) error {
 	if err := s.Buf.WriteByte(MAGIC); err != nil {
 		return err
 	}
-	if err := v.Version.PVEncode(s); err != nil {
-		return err
-	}
-	if err := v.Flags.PVEncode(s); err != nil {
-		return err
-	}
-	if err := v.MessageCommand.PVEncode(s); err != nil {
-		return err
-	}
-	return v.PayloadSize.PVEncode(s)
+	return pvdata.Encode(s, &v.Version, &v.Flags, &v.MessageCommand, &v.PayloadSize)
 }
 func (v *PVAccessHeader) PVDecode(s *pvdata.DecoderState) error {
 	magic, err := s.Buf.ReadByte()
@@ -54,13 +45,7 @@ func (v *PVAccessHeader) PVDecode(s *pvdata.DecoderState) error {
 	if magic != MAGIC {
 		return fmt.Errorf("unexpected magic %x", magic)
 	}
-	if err := v.Version.PVDecode(s); err != nil {
-		return err
-	}
-	if err := v.Flags.PVDecode(s); err != nil {
-		return err
-	}
-	if err := v.MessageCommand.PVDecode(s); err != nil {
+	if err := pvdata.Decode(s, &v.Version, &v.Flags, &v.MessageCommand); err != nil {
 		return err
 	}
 	// Need to decode flags before decoding PayloadSize
