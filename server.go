@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quentinmit/go-pvaccess/internal/connection"
+	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
 	"github.com/quentinmit/go-pvaccess/internal/proto"
 	"github.com/quentinmit/go-pvaccess/pvdata"
 )
@@ -114,10 +115,11 @@ func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
 
 func (srv *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
+	ctx = ctxlog.WithField(ctx, "remote_addr", conn.RemoteAddr())
 	c := srv.newConn(conn)
-	c.Log.Infof("new connection")
+	ctxlog.L(ctx).Infof("new connection")
 	if err := c.serve(ctx); err != nil {
-		c.Log.Errorf("error on connection %v: %v", conn.RemoteAddr(), err)
+		ctxlog.L(ctx).Errorf("error on connection: %v", err)
 	}
 }
 
@@ -125,7 +127,7 @@ func (c *serverConn) serve(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	c.Version = pvdata.PVByte(2)
 	// 0 = Ignore byte order field in header
-	if err := c.SendCtrl(proto.CTRL_SET_BYTE_ORDER, 0); err != nil {
+	if err := c.SendCtrl(ctx, proto.CTRL_SET_BYTE_ORDER, 0); err != nil {
 		return err
 	}
 
@@ -134,14 +136,14 @@ func (c *serverConn) serve(ctx context.Context) error {
 		ServerIntrospectionRegistryMaxSize: 0x7fff,
 		AuthNZ: []string{"anonymous"},
 	}
-	c.SendApp(proto.APP_CONNECTION_VALIDATION, &req)
+	c.SendApp(ctx, proto.APP_CONNECTION_VALIDATION, &req)
 
 	for {
 		if err := c.handleServerOnePacket(ctx); err != nil {
 			if err == io.EOF {
 				cancel()
 				// TODO: Cleanup resources (requests, channels, etc.)
-				c.Log.Infof("client went away, closing connection")
+				ctxlog.L(ctx).Infof("client went away, closing connection")
 				return nil
 			}
 			return err
@@ -149,7 +151,7 @@ func (c *serverConn) serve(ctx context.Context) error {
 	}
 }
 func (c *serverConn) handleServerOnePacket(ctx context.Context) error {
-	msg, err := c.Next()
+	msg, err := c.Next(ctx)
 	if err != nil {
 		return err
 	}
@@ -165,17 +167,17 @@ var serverDispatch = map[pvdata.PVByte]func(c *serverConn, ctx context.Context, 
 	proto.APP_CHANNEL_RPC:           (*serverConn).handleChannelRPC,
 }
 
-func (c *serverConn) handleConnectionValidation(_ context.Context, msg *connection.Message) error {
+func (c *serverConn) handleConnectionValidation(ctx context.Context, msg *connection.Message) error {
 	var resp proto.ConnectionValidationResponse
 	if err := msg.Decode(&resp); err != nil {
 		return err
 	}
-	c.Log.Infof("received connection validation %#v", resp)
+	ctxlog.L(ctx).Infof("received connection validation %#v", resp)
 	// TODO: Implement flow control
-	return c.SendApp(proto.APP_CONNECTION_VALIDATED, &proto.ConnectionValidated{})
+	return c.SendApp(ctx, proto.APP_CONNECTION_VALIDATED, &proto.ConnectionValidated{})
 }
 
-func (c *serverConn) handleCreateChannelRequest(_ context.Context, msg *connection.Message) error {
+func (c *serverConn) handleCreateChannelRequest(ctx context.Context, msg *connection.Message) error {
 	var req proto.CreateChannelRequest
 	if err := msg.Decode(&req); err != nil {
 		return err
@@ -183,7 +185,7 @@ func (c *serverConn) handleCreateChannelRequest(_ context.Context, msg *connecti
 	var resp proto.CreateChannelResponse
 	if len(req.Channels) == 1 {
 		ch := req.Channels[0]
-		c.Log.Infof("received request to create channel %q as client channel ID %x", ch.ChannelName, ch.ClientChannelID)
+		ctxlog.L(ctx).Infof("received request to create channel %q as client channel ID %x", ch.ChannelName, ch.ClientChannelID)
 		resp.ClientChannelID = ch.ClientChannelID
 		if ch.ChannelName == "server" {
 			resp.ServerChannelID = ch.ClientChannelID
@@ -201,10 +203,10 @@ func (c *serverConn) handleCreateChannelRequest(_ context.Context, msg *connecti
 		resp.Status.Type = pvdata.PVStatus_ERROR
 		resp.Status.Message = "wrong number of channels"
 	}
-	return c.SendApp(proto.APP_CHANNEL_CREATE, &resp)
+	return c.SendApp(ctx, proto.APP_CHANNEL_CREATE, &resp)
 }
 
-func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure) (response interface{}, err error) {
+func (c *serverConn) handleServerRPC(ctx context.Context, args pvdata.PVStructure) (response interface{}, err error) {
 	if strings.HasPrefix(args.ID, "epics:nt/NTURI:1.") {
 		if q, ok := args.SubField("query").(*pvdata.PVStructure); ok {
 			args = *q
@@ -225,7 +227,7 @@ func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure)
 		op = *v
 	}
 
-	c.Log.Debugf("op = %s", op)
+	ctxlog.L(ctx).Debugf("op = %s", op)
 
 	switch op {
 	case "channels":
@@ -248,7 +250,7 @@ func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure)
 			runtime.GOOS,
 			runtime.GOARCH,
 		}
-		c.Log.Debugf("returning info %+v", info)
+		ctxlog.L(ctx).Debugf("returning info %+v", info)
 		return info, nil
 	}
 
@@ -279,7 +281,7 @@ func (c *serverConn) handleChannelRPC(ctx context.Context, msg *connection.Messa
 	if err := msg.Decode(&req); err != nil {
 		return err
 	}
-	c.Log.Debugf("CHANNEL_RPC(%#v)", req)
+	ctxlog.L(ctx).Debugf("CHANNEL_RPC(%#v)", req)
 	resp := &proto.ChannelRPCResponseInit{
 		RequestID:  req.RequestID,
 		Subcommand: req.Subcommand,
@@ -289,10 +291,10 @@ func (c *serverConn) handleChannelRPC(ctx context.Context, msg *connection.Messa
 		return nil
 	}
 	if err != nil {
-		c.Log.Warnf("Channel RPC failed: %v", err)
+		ctxlog.L(ctx).Warnf("Channel RPC failed: %v", err)
 	}
 	resp.Status = errorToStatus(err)
-	return c.SendApp(proto.APP_CHANNEL_RPC, resp)
+	return c.SendApp(ctx, proto.APP_CHANNEL_RPC, resp)
 }
 
 func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.ChannelRPCRequest) error {
@@ -305,10 +307,15 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 	if channel.handleRPC == nil {
 		return fmt.Errorf("channel %q (ID %x) does not support RPC", channel.name, req.ServerChannelID)
 	}
-	c.Log.Printf("channel = %#v", channel)
+	ctx = ctxlog.WithFields(ctx, ctxlog.Fields{
+		"channel":    channel.name,
+		"channel_id": req.ServerChannelID,
+		"request_id": req.RequestID,
+	})
+	ctxlog.L(ctx).Debugf("channel = %#v", channel)
 	switch req.Subcommand {
 	case proto.CHANNEL_RPC_INIT:
-		c.Log.Printf("received request to init channel RPC with body %v", req.PVRequest.Data)
+		ctxlog.L(ctx).Printf("received request to init channel RPC with body %v", req.PVRequest.Data)
 		if err := c.addRequest(req.RequestID, &request{status: READY}); err != nil {
 			return err
 		}
@@ -318,7 +325,7 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 		if !ok {
 			return fmt.Errorf("RPC arguments were of type %T, expected PVStructure", req.PVRequest.Data)
 		}
-		c.Log.Printf("received request to execute channel RPC with body %v", args)
+		ctxlog.L(ctx).Printf("received request to execute channel RPC with body %v", args)
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		r := c.requests[req.RequestID]
@@ -339,8 +346,8 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 				Status:         errorToStatus(err),
 				PVResponseData: pvdata.NewPVAny(respData),
 			}
-			if err := c.SendApp(proto.APP_CHANNEL_RPC, resp); err != nil {
-				c.Log.Errorf("sending RPC response: %v", err)
+			if err := c.SendApp(ctx, proto.APP_CHANNEL_RPC, resp); err != nil {
+				ctxlog.L(ctx).Errorf("sending RPC response: %v", err)
 			}
 
 			c.mu.Lock()

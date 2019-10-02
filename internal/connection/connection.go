@@ -3,21 +3,19 @@ package connection
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"io"
-	"net"
 	"os"
 	"sync"
 	"syscall"
 
-	log "github.com/sirupsen/logrus"
-
+	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
 	"github.com/quentinmit/go-pvaccess/internal/proto"
 	"github.com/quentinmit/go-pvaccess/pvdata"
 )
 
 type Connection struct {
-	Log       *log.Entry
 	Version   pvdata.PVByte
 	Direction pvdata.PVUByte
 
@@ -30,12 +28,7 @@ type Connection struct {
 }
 
 func New(conn io.ReadWriter, direction pvdata.PVUByte) *Connection {
-	f := make(log.Fields)
-	if conn, ok := conn.(net.Conn); ok {
-		f["remote_addr"] = conn.RemoteAddr()
-	}
 	return &Connection{
-		Log:       log.WithFields(f),
 		Direction: direction,
 		conn:      conn,
 		encoderState: &pvdata.EncoderState{
@@ -80,11 +73,14 @@ func (c *Connection) flush() error {
 
 // SendCtrl sends a control message on the wire.
 // It is safe to call SendCtrl from any goroutine.
-func (c *Connection) SendCtrl(messageCommand pvdata.PVByte, payloadSize pvdata.PVInt) error {
+func (c *Connection) SendCtrl(ctx context.Context, messageCommand pvdata.PVByte, payloadSize pvdata.PVInt) error {
 	c.encoderMu.Lock()
 	defer c.encoderMu.Unlock()
 	defer c.flush()
-	c.Log.Debugf("sending control message %x with payload %x", messageCommand, payloadSize)
+	ctxlog.L(ctx).WithFields(ctxlog.Fields{
+		"command":      messageCommand,
+		"payload_size": payloadSize,
+	}).Debug("sending control message")
 	flags := proto.FLAG_MSG_CTRL | c.Direction
 	if c.encoderState.ByteOrder == binary.BigEndian {
 		flags |= proto.FLAG_BO_BE
@@ -111,7 +107,7 @@ func (c *Connection) encodePayload(payload interface{}) ([]byte, error) {
 // SendApp sends an application message on the wire.
 // payload must be something that can be passed to pvdata.Encode; i.e. it must be either an instance of PVField or a pointer to something that can be converted to a PVField.
 // It is safe to call SendApp from any goroutine.
-func (c *Connection) SendApp(messageCommand pvdata.PVByte, payload interface{}) error {
+func (c *Connection) SendApp(ctx context.Context, messageCommand pvdata.PVByte, payload interface{}) error {
 	c.encoderMu.Lock()
 	defer c.encoderMu.Unlock()
 	defer c.flush()
@@ -129,7 +125,10 @@ func (c *Connection) SendApp(messageCommand pvdata.PVByte, payload interface{}) 
 		MessageCommand: messageCommand,
 		PayloadSize:    pvdata.PVInt(len(bytes)),
 	}
-	c.Log.Debugf("sending app message %x with payload size %d", messageCommand, len(bytes))
+	ctxlog.L(ctx).WithFields(ctxlog.Fields{
+		"command":      messageCommand,
+		"payload_size": len(bytes),
+	}).Debug("sending app message")
 	if err := h.PVEncode(c.encoderState); err != nil {
 		return err
 	}
@@ -137,10 +136,11 @@ func (c *Connection) SendApp(messageCommand pvdata.PVByte, payload interface{}) 
 	return err
 }
 
-func (c *Connection) handleControlMessage(header *proto.PVAccessHeader) error {
+func (c *Connection) handleControlMessage(ctx context.Context, header *proto.PVAccessHeader) error {
+	ctx = ctxlog.WithField(ctx, "request_command", header.MessageCommand)
 	switch header.MessageCommand {
 	case proto.CTRL_MARK_TOTAL_BYTE_SENT:
-		return c.SendCtrl(proto.CTRL_ACK_TOTAL_BYTE_SENT, header.PayloadSize)
+		return c.SendCtrl(ctx, proto.CTRL_ACK_TOTAL_BYTE_SENT, header.PayloadSize)
 	case proto.CTRL_ACK_TOTAL_BYTE_SENT:
 		// TODO: Implement flow control
 	case proto.CTRL_SET_BYTE_ORDER:
@@ -148,9 +148,9 @@ func (c *Connection) handleControlMessage(header *proto.PVAccessHeader) error {
 			c.forceByteOrder = true
 		}
 	case proto.CTRL_ECHO_REQUEST:
-		return c.SendCtrl(proto.CTRL_ECHO_RESPONSE, header.PayloadSize)
+		return c.SendCtrl(ctx, proto.CTRL_ECHO_RESPONSE, header.PayloadSize)
 	default:
-		c.Log.Warnf("ignoring unknown control message %02x", header.MessageCommand)
+		ctxlog.L(ctx).Warnf("ignoring unknown control message %02x", header.MessageCommand)
 	}
 	return nil
 }
@@ -163,7 +163,7 @@ type Message struct {
 	reader pvdata.Reader
 }
 
-func (c *Connection) Next() (*Message, error) {
+func (c *Connection) Next(ctx context.Context) (*Message, error) {
 	for {
 		header := proto.PVAccessHeader{
 			ForceByteOrder: c.forceByteOrder,
@@ -171,9 +171,14 @@ func (c *Connection) Next() (*Message, error) {
 		if err := pvdata.Decode(c.decoderState, &header); err != nil {
 			return nil, err
 		}
-		c.Log.Debugf("received packet %#v", header)
+		ctxlog.L(ctx).WithFields(ctxlog.Fields{
+			"version":         header.Version,
+			"flags":           header.Flags,
+			"message_command": header.MessageCommand,
+			"payload_size":    header.PayloadSize,
+		}).Debug("received packet")
 		if header.Flags&proto.FLAG_MSG_CTRL == proto.FLAG_MSG_CTRL {
-			if err := c.handleControlMessage(&header); err != nil {
+			if err := c.handleControlMessage(ctx, &header); err != nil {
 				return nil, err
 			}
 			continue
