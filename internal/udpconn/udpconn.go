@@ -101,6 +101,10 @@ func newConn(ln *Listener, key addr, addr *net.UDPAddr) *Conn {
 	return conn
 }
 
+func (conn *Conn) Addr() *net.UDPAddr {
+	return conn.addr
+}
+
 func (conn *Conn) Read(p []byte) (int, error) {
 	return conn.r.Read(p)
 }
@@ -110,5 +114,6 @@ func (conn *Conn) Write(p []byte) (int, error) {
 }
 
 func (conn *Conn) Close() error {
+	conn.packetIn.Close()
 	return conn.ln.closeAddr(conn.key)
 }
