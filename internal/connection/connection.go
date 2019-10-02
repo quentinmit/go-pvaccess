@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"syscall"
 
 	log "github.com/sirupsen/logrus"
@@ -20,7 +21,9 @@ type Connection struct {
 	Version   pvdata.PVByte
 	Direction pvdata.PVUByte
 
-	conn           io.ReadWriter
+	conn io.ReadWriter
+	// encoderMu protects use of encoderState.
+	encoderMu      sync.Mutex
 	encoderState   *pvdata.EncoderState
 	decoderState   *pvdata.DecoderState
 	forceByteOrder bool
@@ -64,6 +67,7 @@ type flusher interface {
 	Flush() error
 }
 
+// flush must be called with encoderMu held.
 func (c *Connection) flush() error {
 	if f, ok := c.encoderState.Buf.(flusher); ok {
 		if err := f.Flush(); err != nil {
@@ -74,7 +78,11 @@ func (c *Connection) flush() error {
 	return nil
 }
 
+// SendCtrl sends a control message on the wire.
+// It is safe to call SendCtrl from any goroutine.
 func (c *Connection) SendCtrl(messageCommand pvdata.PVByte, payloadSize pvdata.PVInt) error {
+	c.encoderMu.Lock()
+	defer c.encoderMu.Unlock()
 	defer c.flush()
 	c.Log.Debugf("sending control message %x with payload %x", messageCommand, payloadSize)
 	flags := proto.FLAG_MSG_CTRL | c.Direction
@@ -90,6 +98,7 @@ func (c *Connection) SendCtrl(messageCommand pvdata.PVByte, payloadSize pvdata.P
 	return h.PVEncode(c.encoderState)
 }
 
+// encodePayload must be called with encoderMu held.
 func (c *Connection) encodePayload(payload interface{}) ([]byte, error) {
 	var buf bytes.Buffer
 	defer c.encoderState.PushWriter(&buf)()
@@ -99,7 +108,12 @@ func (c *Connection) encodePayload(payload interface{}) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// SendApp sends an application message on the wire.
+// payload must be something that can be passed to pvdata.Encode; i.e. it must be either an instance of PVField or a pointer to something that can be converted to a PVField.
+// It is safe to call SendApp from any goroutine.
 func (c *Connection) SendApp(messageCommand pvdata.PVByte, payload interface{}) error {
+	c.encoderMu.Lock()
+	defer c.encoderMu.Unlock()
 	defer c.flush()
 	bytes, err := c.encodePayload(payload)
 	if err != nil {

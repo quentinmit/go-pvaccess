@@ -60,7 +60,7 @@ type serverConn struct {
 
 type connChannel struct {
 	name      string
-	handleRPC func(ctx context.Context, args pvdata.PVStructure) (response interface{}, status pvdata.PVStatus)
+	handleRPC func(ctx context.Context, args pvdata.PVStructure) (response interface{}, err error)
 }
 
 type requestStatus int
@@ -204,7 +204,7 @@ func (c *serverConn) handleCreateChannelRequest(_ context.Context, msg *connecti
 	return c.SendApp(proto.APP_CHANNEL_CREATE, &resp)
 }
 
-func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure) (response interface{}, status pvdata.PVStatus) {
+func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure) (response interface{}, err error) {
 	if strings.HasPrefix(args.ID, "epics:nt/NTURI:1.") {
 		if q, ok := args.SubField("query").(*pvdata.PVStructure); ok {
 			args = *q
@@ -249,7 +249,7 @@ func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure)
 			runtime.GOARCH,
 		}
 		c.Log.Debugf("returning info %+v", info)
-		return info, pvdata.PVStatus{}
+		return info, nil
 	}
 
 	return &struct{}{}, pvdata.PVStatus{
@@ -260,6 +260,19 @@ func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure)
 
 // asyncOperation is a sentinel error to halt the current response in favor of a later asynchronous reply.
 var asyncOperation = errors.New("async operation started")
+
+func errorToStatus(err error) pvdata.PVStatus {
+	if err == nil {
+		return pvdata.PVStatus{}
+	}
+	if s, ok := err.(pvdata.PVStatus); ok {
+		return s
+	}
+	return pvdata.PVStatus{
+		Type:    pvdata.PVStatus_FATAL,
+		Message: pvdata.PVString(err.Error()),
+	}
+}
 
 func (c *serverConn) handleChannelRPC(ctx context.Context, msg *connection.Message) error {
 	var req proto.ChannelRPCRequest
@@ -280,19 +293,6 @@ func (c *serverConn) handleChannelRPC(ctx context.Context, msg *connection.Messa
 	}
 	resp.Status = errorToStatus(err)
 	return c.SendApp(proto.APP_CHANNEL_RPC, resp)
-}
-
-func errorToStatus(err error) pvdata.PVStatus {
-	if err == nil {
-		return pvdata.PVStatus{}
-	}
-	if s, ok := err.(pvdata.PVStatus); ok {
-		return s
-	}
-	return pvdata.PVStatus{
-		Type:    pvdata.PVStatus_FATAL,
-		Message: pvdata.PVString(err.Error()),
-	}
 }
 
 func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.ChannelRPCRequest) error {
@@ -332,14 +332,16 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 		r.status = REQUEST_IN_PROGRESS
 		r.cancel = cancel
 		go func() {
-			respData, status := channel.handleRPC(ctx, args)
+			respData, err := channel.handleRPC(ctx, args)
 			resp := &proto.ChannelRPCResponse{
 				RequestID:      req.RequestID,
 				Subcommand:     req.Subcommand,
-				Status:         status,
+				Status:         errorToStatus(err),
 				PVResponseData: pvdata.NewPVAny(respData),
 			}
-			c.SendApp(proto.APP_CHANNEL_RPC, resp)
+			if err := c.SendApp(proto.APP_CHANNEL_RPC, resp); err != nil {
+				c.Log.Errorf("sending RPC response: %v", err)
+			}
 
 			c.mu.Lock()
 			defer c.mu.Unlock()
