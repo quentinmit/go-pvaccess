@@ -106,14 +106,21 @@ func (c *Connection) encodePayload(payload interface{}) ([]byte, error) {
 
 // SendApp sends an application message on the wire.
 // payload must be something that can be passed to pvdata.Encode; i.e. it must be either an instance of PVField or a pointer to something that can be converted to a PVField.
+// If payload is a []byte it will be sent raw.
 // It is safe to call SendApp from any goroutine.
 func (c *Connection) SendApp(ctx context.Context, messageCommand pvdata.PVByte, payload interface{}) error {
 	c.encoderMu.Lock()
 	defer c.encoderMu.Unlock()
 	defer c.flush()
-	bytes, err := c.encodePayload(payload)
-	if err != nil {
-		return err
+	var bytes []byte
+	if b, ok := payload.([]byte); ok {
+		bytes = b
+	} else {
+		var err error
+		bytes, err = c.encodePayload(payload)
+		if err != nil {
+			return err
+		}
 	}
 	flags := proto.FLAG_MSG_APP | c.Direction
 	if c.encoderState.ByteOrder == binary.BigEndian {
@@ -132,7 +139,7 @@ func (c *Connection) SendApp(ctx context.Context, messageCommand pvdata.PVByte, 
 	if err := h.PVEncode(c.encoderState); err != nil {
 		return err
 	}
-	_, err = c.encoderState.Buf.Write(bytes)
+	_, err := c.encoderState.Buf.Write(bytes)
 	return err
 }
 
@@ -153,6 +160,13 @@ func (c *Connection) handleControlMessage(ctx context.Context, header *proto.PVA
 		ctxlog.L(ctx).Warnf("ignoring unknown control message %02x", header.MessageCommand)
 	}
 	return nil
+}
+
+func (c *Connection) handleAppEcho(ctx context.Context, header proto.PVAccessHeader, data []byte) error {
+	if header.Version >= 2 {
+		return c.SendApp(ctx, proto.APP_ECHO, data)
+	}
+	return c.SendApp(ctx, proto.APP_ECHO, []byte{})
 }
 
 type Message struct {
@@ -187,6 +201,13 @@ func (c *Connection) Next(ctx context.Context) (*Message, error) {
 		data := make([]byte, header.PayloadSize)
 		if _, err := io.ReadFull(c.decoderState.Buf, data); err != nil {
 			return &Message{Header: header, Data: data, c: c}, err
+		}
+
+		if header.MessageCommand == proto.APP_ECHO {
+			if err := c.handleAppEcho(ctx, header, data); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		// TODO: Segmented packets
 		return &Message{Header: header, Data: data, c: c}, nil

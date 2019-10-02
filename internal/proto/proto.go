@@ -120,6 +120,8 @@ type ConnectionValidated struct {
 	Status pvdata.PVStatus
 }
 
+// echoRequest and echoResponse are raw bytes; version 1 servers always have an empty echoResponse.
+
 type CreateChannelRequest_Channel struct {
 	ClientChannelID pvdata.PVInt
 	ChannelName     string `pvaccess:",bound=500"`
