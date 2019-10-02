@@ -15,6 +15,7 @@ import (
 	"github.com/quentinmit/go-pvaccess/internal/connection"
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
 	"github.com/quentinmit/go-pvaccess/internal/proto"
+	"github.com/quentinmit/go-pvaccess/internal/search"
 	"github.com/quentinmit/go-pvaccess/pvdata"
 )
 
@@ -37,6 +38,11 @@ func (srv *Server) ListenAndServe(ctx context.Context) error {
 
 // TODO: UDP beacon support
 func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
+	go func() {
+		if err := search.Serve(ctx, l.Addr().(*net.TCPAddr)); err != nil {
+			ctxlog.L(ctx).Errorf("failed to serve search requests: %v", err)
+		}
+	}()
 	for {
 		conn, err := l.Accept()
 		if err != nil {

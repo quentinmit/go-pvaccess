@@ -122,7 +122,8 @@ type ConnectionValidated struct {
 
 // echoRequest and echoResponse are raw bytes; version 1 servers always have an empty echoResponse.
 
-// searchRequest
+// Search
+
 type SearchRequest struct {
 	SearchSequenceID pvdata.PVUInt
 	Flags            pvdata.PVUByte // 0-bit for replyRequired, 7-th bit for "sent as unicast" (1)/"sent as broadcast/multicast" (0)
@@ -143,7 +144,17 @@ type SearchRequest_Channel struct {
 	ChannelName      string `pvaccess:",bound=500"`
 }
 
-// searchResponse
+type SearchResponse struct {
+	GUID              [12]byte
+	SearchSequenceID  pvdata.PVUInt
+	ServerAddress     [16]byte        // e.g. IPv6 address in case of IP based transport
+	ServerPort        pvdata.PVUShort // e.g. socket port in case of IP based transport
+	Protocol          pvdata.PVString
+	Found             pvdata.PVBoolean
+	SearchInstanceIDs []pvdata.PVUInt `pvaccess:",short"`
+}
+
+// Create channel
 
 type CreateChannelRequest_Channel struct {
 	ClientChannelID pvdata.PVInt

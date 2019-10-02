@@ -358,7 +358,7 @@ func NewPVFixedArray(slicePtr interface{}) PVArray {
 func (a PVArray) PVEncode(s *EncoderState) error {
 	if !a.fixed {
 		if a.alwaysShort {
-			if err := PVShort(a.v.Len()).PVEncode(s); err != nil {
+			if err := PVUShort(a.v.Len()).PVEncode(s); err != nil {
 				return err
 			}
 		} else {
@@ -388,7 +388,7 @@ func (a PVArray) PVDecode(s *DecoderState) error {
 		size = PVSize(a.v.Len())
 	} else {
 		if a.alwaysShort {
-			var sizeShort PVShort
+			var sizeShort PVUShort
 			if err := sizeShort.PVDecode(s); err != nil {
 				return err
 			}
