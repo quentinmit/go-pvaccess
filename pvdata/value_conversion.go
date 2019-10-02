@@ -60,6 +60,17 @@ func nameOption(name string) option {
 		return nil
 	}
 }
+func shortOption() option {
+	return func(v reflect.Value) PVField {
+		if v.Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+		if v.Kind() == reflect.Slice {
+			return PVArray{alwaysShort: true, v: v}
+		}
+		return nil
+	}
+}
 
 func tagsToOptions(tags map[string]string) []option {
 	var options []option
@@ -75,6 +86,9 @@ func tagsToOptions(tags map[string]string) []option {
 		if val, err := strconv.ParseInt(val, 0, 64); err == nil {
 			options = append(options, boundOption(val))
 		}
+	}
+	if _, ok := tags["short"]; ok {
+		options = append(options, shortOption())
 	}
 	return options
 }
@@ -127,9 +141,9 @@ func valueToPVField(v reflect.Value, options ...option) PVField {
 	}
 	switch v.Kind() {
 	case reflect.Slice:
-		return PVArray{false, v}
+		return PVArray{v: v}
 	case reflect.Array:
-		return PVArray{true, v}
+		return PVArray{fixed: true, v: v}
 	case reflect.Struct:
 		return PVStructure{"", v}
 	}

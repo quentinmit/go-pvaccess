@@ -151,8 +151,8 @@ func (v *PVSize) PVDecode(s *DecoderState) error {
 
 type PVBoolean bool
 
-func (v *PVBoolean) PVEncode(s *EncoderState) error {
-	if *v {
+func (v PVBoolean) PVEncode(s *EncoderState) error {
+	if v {
 		return s.Buf.WriteByte(1)
 	}
 	return s.Buf.WriteByte(0)
@@ -171,8 +171,8 @@ func (PVBoolean) Field() (Field, error) {
 
 type PVByte int8
 
-func (v *PVByte) PVEncode(s *EncoderState) error {
-	return s.Buf.WriteByte(byte(*v))
+func (v PVByte) PVEncode(s *EncoderState) error {
+	return s.Buf.WriteByte(byte(v))
 }
 func (v *PVByte) PVDecode(s *DecoderState) error {
 	data, err := s.Buf.ReadByte()
@@ -188,8 +188,8 @@ func (PVByte) Field() (Field, error) {
 
 type PVUByte uint8
 
-func (v *PVUByte) PVEncode(s *EncoderState) error {
-	return s.Buf.WriteByte(byte(*v))
+func (v PVUByte) PVEncode(s *EncoderState) error {
+	return s.Buf.WriteByte(byte(v))
 }
 func (v *PVUByte) PVDecode(s *DecoderState) error {
 	data, err := s.Buf.ReadByte()
@@ -205,8 +205,8 @@ func (PVUByte) Field() (Field, error) {
 
 type PVShort int16
 
-func (v *PVShort) PVEncode(s *EncoderState) error {
-	return s.WriteUint16(uint16(*v))
+func (v PVShort) PVEncode(s *EncoderState) error {
+	return s.WriteUint16(uint16(v))
 }
 func (v *PVShort) PVDecode(s *DecoderState) error {
 	data, err := s.ReadUint16()
@@ -222,8 +222,8 @@ func (PVShort) Field() (Field, error) {
 
 type PVUShort uint16
 
-func (v *PVUShort) PVEncode(s *EncoderState) error {
-	return s.WriteUint16(uint16(*v))
+func (v PVUShort) PVEncode(s *EncoderState) error {
+	return s.WriteUint16(uint16(v))
 }
 func (v *PVUShort) PVDecode(s *DecoderState) error {
 	data, err := s.ReadUint16()
@@ -239,8 +239,8 @@ func (PVUShort) Field() (Field, error) {
 
 type PVInt int32
 
-func (v *PVInt) PVEncode(s *EncoderState) error {
-	return s.WriteUint32(uint32(*v))
+func (v PVInt) PVEncode(s *EncoderState) error {
+	return s.WriteUint32(uint32(v))
 }
 func (v *PVInt) PVDecode(s *DecoderState) error {
 	data, err := s.ReadUint32()
@@ -256,8 +256,8 @@ func (PVInt) Field() (Field, error) {
 
 type PVUInt uint32
 
-func (v *PVUInt) PVEncode(s *EncoderState) error {
-	return s.WriteUint32(uint32(*v))
+func (v PVUInt) PVEncode(s *EncoderState) error {
+	return s.WriteUint32(uint32(v))
 }
 func (v *PVUInt) PVDecode(s *DecoderState) error {
 	data, err := s.ReadUint32()
@@ -273,8 +273,8 @@ func (PVUInt) Field() (Field, error) {
 
 type PVLong int64
 
-func (v *PVLong) PVEncode(s *EncoderState) error {
-	return s.WriteUint64(uint64(*v))
+func (v PVLong) PVEncode(s *EncoderState) error {
+	return s.WriteUint64(uint64(v))
 }
 func (v *PVLong) PVDecode(s *DecoderState) error {
 	data, err := s.ReadUint64()
@@ -290,8 +290,8 @@ func (PVLong) Field() (Field, error) {
 
 type PVULong uint64
 
-func (v *PVULong) PVEncode(s *EncoderState) error {
-	return s.WriteUint64(uint64(*v))
+func (v PVULong) PVEncode(s *EncoderState) error {
+	return s.WriteUint64(uint64(v))
 }
 func (v *PVULong) PVDecode(s *DecoderState) error {
 	data, err := s.ReadUint64()
@@ -307,8 +307,8 @@ func (PVULong) Field() (Field, error) {
 
 type PVFloat float32
 
-func (v *PVFloat) PVEncode(s *EncoderState) error {
-	return s.WriteUint32(math.Float32bits(float32(*v)))
+func (v PVFloat) PVEncode(s *EncoderState) error {
+	return s.WriteUint32(math.Float32bits(float32(v)))
 }
 func (v *PVFloat) PVDecode(s *DecoderState) error {
 	data, err := s.ReadUint32()
@@ -324,8 +324,8 @@ func (PVFloat) Field() (Field, error) {
 
 type PVDouble float64
 
-func (v *PVDouble) PVEncode(s *EncoderState) error {
-	return s.WriteUint64(math.Float64bits(float64(*v)))
+func (v PVDouble) PVEncode(s *EncoderState) error {
+	return s.WriteUint64(math.Float64bits(float64(v)))
 }
 func (v *PVDouble) PVDecode(s *DecoderState) error {
 	data, err := s.ReadUint64()
@@ -342,22 +342,29 @@ func (PVDouble) Field() (Field, error) {
 // Arrays
 
 type PVArray struct {
-	fixed bool
+	fixed       bool
+	alwaysShort bool
 	// TODO: bounded-size arrays
 	v reflect.Value
 }
 
 func NewPVFixedArray(slicePtr interface{}) PVArray {
 	return PVArray{
-		true,
-		reflect.ValueOf(slicePtr).Elem(),
+		fixed: true,
+		v:     reflect.ValueOf(slicePtr).Elem(),
 	}
 }
 
 func (a PVArray) PVEncode(s *EncoderState) error {
 	if !a.fixed {
-		if err := PVSize(a.v.Len()).PVEncode(s); err != nil {
-			return err
+		if a.alwaysShort {
+			if err := PVShort(a.v.Len()).PVEncode(s); err != nil {
+				return err
+			}
+		} else {
+			if err := PVSize(a.v.Len()).PVEncode(s); err != nil {
+				return err
+			}
 		}
 	}
 	for i := 0; i < a.v.Len(); i++ {
@@ -380,8 +387,16 @@ func (a PVArray) PVDecode(s *DecoderState) error {
 	if a.fixed {
 		size = PVSize(a.v.Len())
 	} else {
-		if err := size.PVDecode(s); err != nil {
-			return err
+		if a.alwaysShort {
+			var sizeShort PVShort
+			if err := sizeShort.PVDecode(s); err != nil {
+				return err
+			}
+			size = PVSize(sizeShort)
+		} else {
+			if err := size.PVDecode(s); err != nil {
+				return err
+			}
 		}
 		if a.v.Cap() < int(size) {
 			a.v.Set(reflect.MakeSlice(a.v.Type(), int(size), int(size)))

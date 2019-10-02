@@ -122,12 +122,35 @@ type ConnectionValidated struct {
 
 // echoRequest and echoResponse are raw bytes; version 1 servers always have an empty echoResponse.
 
+// searchRequest
+type SearchRequest struct {
+	SearchSequenceID pvdata.PVUInt
+	Flags            pvdata.PVUByte // 0-bit for replyRequired, 7-th bit for "sent as unicast" (1)/"sent as broadcast/multicast" (0)
+
+	Reserved [3]byte
+
+	// if not provided (or zero), the same transport is used for responses
+	// needs to be set when local broadcast (multicast on loop interface) is done
+	ResponseAddress [16]byte        // e.g. IPv6 address in case of IP based transport, UDP
+	ResponsePort    pvdata.PVUShort // e.g. socket port in case of IP based transport
+
+	Protocols []pvdata.PVString
+
+	Channels []SearchRequest_Channel `pvaccess:",short"`
+}
+type SearchRequest_Channel struct {
+	SearchInstanceID pvdata.PVUInt
+	ChannelName      string `pvaccess:",bound=500"`
+}
+
+// searchResponse
+
 type CreateChannelRequest_Channel struct {
 	ClientChannelID pvdata.PVInt
 	ChannelName     string `pvaccess:",bound=500"`
 }
 type CreateChannelRequest struct {
-	Channels []CreateChannelRequest_Channel
+	Channels []CreateChannelRequest_Channel `pvaccess:",short"`
 }
 
 func (c CreateChannelRequest) PVEncode(s *pvdata.EncoderState) error {
