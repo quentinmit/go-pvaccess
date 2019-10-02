@@ -2,6 +2,7 @@ package pvaccess
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -54,11 +55,51 @@ type serverConn struct {
 
 	mu       sync.Mutex
 	channels map[pvdata.PVInt]*connChannel
+	requests map[pvdata.PVInt]*request
 }
 
 type connChannel struct {
 	name      string
 	handleRPC func(ctx context.Context, args pvdata.PVStructure) (response interface{}, status pvdata.PVStatus)
+}
+
+type requestStatus int
+
+const (
+	INIT = iota
+	READY
+	REQUEST_IN_PROGRESS
+	CANCELLED
+	DESTROYED
+)
+
+var requestStatusNames = map[requestStatus]string{
+	0: "INIT",
+	1: "READY",
+	2: "REQUEST_IN_PROGRESS",
+	3: "CANCELLED",
+	4: "DESTROYED",
+}
+
+func (r requestStatus) String() string {
+	return requestStatusNames[r]
+}
+
+type request struct {
+	cancel func()
+	status requestStatus
+}
+
+func (c *serverConn) addRequest(id pvdata.PVInt, r *request) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if existing, ok := c.requests[id]; ok {
+		if existing.status != DESTROYED {
+			return fmt.Errorf("request ID %x already exists with status %s", id, requestStatusNames[existing.status])
+		}
+	}
+	c.requests[id] = r
+	return nil
 }
 
 func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
@@ -216,6 +257,9 @@ func (c *serverConn) handleServerRPC(_ context.Context, args pvdata.PVStructure)
 	}
 }
 
+// asyncOperation is a sentinel error to halt the current response in favor of a later asynchronous reply.
+var asyncOperation = errors.New("async operation started")
+
 func (c *serverConn) handleChannelRPC(ctx context.Context, msg *connection.Message) error {
 	var req proto.ChannelRPCRequest
 	if err := msg.Decode(&req); err != nil {
@@ -226,34 +270,80 @@ func (c *serverConn) handleChannelRPC(ctx context.Context, msg *connection.Messa
 		RequestID:  req.RequestID,
 		Subcommand: req.Subcommand,
 	}
+	err := c.handleChannelRPCBody(ctx, req)
+	if err == asyncOperation {
+		return nil
+	}
+	resp.Status = errorToStatus(err)
+	return c.SendApp(proto.APP_CHANNEL_RPC, resp)
+}
+
+func errorToStatus(err error) pvdata.PVStatus {
+	if err == nil {
+		return pvdata.PVStatus{}
+	}
+	if s, ok := err.(pvdata.PVStatus); ok {
+		return s
+	}
+	return pvdata.PVStatus{
+		Type:    pvdata.PVStatus_FATAL,
+		Message: pvdata.PVString(err.Error()),
+	}
+}
+
+func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.ChannelRPCRequest) error {
 	c.mu.Lock()
 	channel := c.channels[req.ServerChannelID]
 	c.mu.Unlock()
+	if channel == nil {
+		return fmt.Errorf("unknown channel ID %x", req.ServerChannelID)
+	}
+	if channel.handleRPC == nil {
+		return fmt.Errorf("channel %q (ID %x) does not support RPC", channel.name, req.ServerChannelID)
+	}
 	c.Log.Printf("channel = %#v", channel)
-	if channel != nil && channel.handleRPC != nil {
-		switch req.Subcommand {
-		case proto.CHANNEL_RPC_INIT:
-			c.Log.Printf("received request to init channel RPC with body %v", req.PVRequest.Data)
-			return c.SendApp(proto.APP_CHANNEL_RPC, resp)
+	switch req.Subcommand {
+	case proto.CHANNEL_RPC_INIT:
+		c.Log.Printf("received request to init channel RPC with body %v", req.PVRequest.Data)
+		if err := c.addRequest(req.RequestID, &request{status: READY}); err != nil {
+			return err
 		}
-		c.Log.Printf("%T", req.PVRequest.Data)
-		if args, ok := req.PVRequest.Data.(pvdata.PVStructure); ok {
-			c.Log.Printf("received request to execute channel RPC with body %v", args)
-			resp, status := channel.handleRPC(ctx, args)
-			r := &proto.ChannelRPCResponse{
+		return nil
+	default:
+		args, ok := req.PVRequest.Data.(pvdata.PVStructure)
+		if !ok {
+			return fmt.Errorf("RPC arguments were of type %T, expected PVStructure", req.PVRequest.Data)
+		}
+		c.Log.Printf("received request to execute channel RPC with body %v", args)
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		r := c.requests[req.RequestID]
+		if r.status != READY {
+			return pvdata.PVStatus{
+				Type:    pvdata.PVStatus_ERROR,
+				Message: pvdata.PVString("request not READY"),
+			}
+		}
+		ctx, cancel := context.WithCancel(ctx)
+		r.status = REQUEST_IN_PROGRESS
+		r.cancel = cancel
+		go func() {
+			respData, status := channel.handleRPC(ctx, args)
+			resp := &proto.ChannelRPCResponse{
 				RequestID:      req.RequestID,
 				Subcommand:     req.Subcommand,
 				Status:         status,
-				PVResponseData: pvdata.NewPVAny(resp),
+				PVResponseData: pvdata.NewPVAny(respData),
 			}
-			return c.SendApp(proto.APP_CHANNEL_RPC, r)
-		}
-	}
-	c.Log.Printf("request to RPC on channel %q which cannot RPC", channel.name)
-	resp.Status = pvdata.PVStatus{
-		Type:    pvdata.PVStatus_ERROR,
-		Message: pvdata.PVString("don't know how to execute that RPC"),
-	}
+			c.SendApp(proto.APP_CHANNEL_RPC, resp)
 
-	return c.SendApp(proto.APP_CHANNEL_RPC, resp)
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			r.status = READY
+			if req.Subcommand&proto.CHANNEL_RPC_DESTROY == proto.CHANNEL_RPC_DESTROY {
+				r.status = DESTROYED
+			}
+		}()
+		return asyncOperation
+	}
 }

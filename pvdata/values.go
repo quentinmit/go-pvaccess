@@ -580,7 +580,12 @@ func NewPVAny(data interface{}) PVAny {
 	}
 }
 
-func (v PVAny) PVEncode(s *EncoderState) error {
+// PVEncode outputs a field description followed by the serialized field.
+// As a special case, encoding a nil PVAny pointer will output zero bytes.
+func (v *PVAny) PVEncode(s *EncoderState) error {
+	if v == nil {
+		return nil
+	}
 	if v.Data == nil {
 		return Encode(s, &Field{TypeCode: NULL_TYPE_CODE})
 	}
@@ -651,6 +656,12 @@ func (v *PVStatus) PVDecode(s *DecoderState) error {
 		return err
 	}
 	return v.CallTree.PVDecode(s)
+}
+func (v PVStatus) Error() string {
+	if v.Type == PVStatus_OK {
+		return "OK"
+	}
+	return fmt.Sprintf("%d: %s", v.Type, v.Message)
 }
 
 // Introspection data
