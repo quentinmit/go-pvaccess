@@ -39,11 +39,10 @@ type Listener struct {
 }
 
 func Listen(ctx context.Context, network string, laddr *net.UDPAddr) (*Listener, error) {
-	conn, err := reuseportListenConfig.ListenPacket(ctx, network, laddr.String())
+	udpConn, network, err := listen(ctx, network, laddr.String())
 	if err != nil {
 		return nil, fmt.Errorf("listen %v: %v", laddr, err)
 	}
-	udpConn := conn.(*net.UDPConn)
 	ch := make(chan *Conn)
 	ln := &Listener{
 		lns:    []*net.UDPConn{udpConn},
@@ -57,9 +56,7 @@ func Listen(ctx context.Context, network string, laddr *net.UDPAddr) (*Listener,
 	}
 	var cerr error
 	if err := rawConn.Control(func(fd uintptr) {
-		// TODO: Set IPv6 sockopts if the socket is IPv6.
-		ctxlog.L(ctx).Debugf("network = %q", udpConn.LocalAddr().Network())
-		if udpConn.LocalAddr().Network() == "udp6" {
+		if network == "udp6" {
 			if loIntf := ipv6LoopbackIndex(ctx); loIntf >= 0 {
 				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, syscall.IPV6_MULTICAST_IF, loIntf); err != nil {
 					cerr = err
@@ -89,11 +86,10 @@ func Listen(ctx context.Context, network string, laddr *net.UDPAddr) (*Listener,
 }
 
 func (ln *Listener) AddReadAddress(ctx context.Context, network string, laddr *net.UDPAddr) error {
-	conn, err := reuseportListenConfig.ListenPacket(ctx, network, laddr.String())
+	udpConn, _, err := listen(ctx, network, laddr.String())
 	if err != nil {
 		return fmt.Errorf("listen %v: %v", laddr, err)
 	}
-	udpConn := conn.(*net.UDPConn)
 	ln.lns = append(ln.lns, udpConn)
 	go ln.readLoop(udpConn)
 	return nil
