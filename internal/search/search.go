@@ -12,6 +12,7 @@ import (
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
 	"github.com/quentinmit/go-pvaccess/internal/proto"
 	"github.com/quentinmit/go-pvaccess/internal/udpconn"
+	"github.com/quentinmit/go-pvaccess/pvdata"
 )
 
 type server struct {
@@ -55,6 +56,7 @@ func Serve(ctx context.Context, serverAddr *net.TCPAddr) error {
 		return err
 	}
 	beaconSender := connection.New(sendConn, proto.FLAG_FROM_SERVER)
+	beaconSender.Version = pvdata.PVByte(2)
 
 	var ips []*net.UDPAddr
 	var bcasts []*net.UDPAddr
@@ -97,7 +99,8 @@ func Serve(ctx context.Context, serverAddr *net.TCPAddr) error {
 
 				go func() {
 					if err := (&searchServer{
-						GUID: beacon.GUID,
+						GUID:       beacon.GUID,
+						ServerPort: serverAddr.Port,
 					}).serve(ctx, laddr, extra); err != nil && err != io.EOF {
 						ctxlog.L(ctx).Errorf("failed handling search request: %v", err)
 					}
@@ -144,7 +147,8 @@ func bcastIP(ip net.IP, mask net.IPMask) net.IP {
 }
 
 type searchServer struct {
-	GUID [12]byte
+	GUID       [12]byte
+	ServerPort int
 }
 
 func (s *searchServer) serve(ctx context.Context, laddr *net.UDPAddr, extra []*net.UDPAddr) (err error) {
@@ -183,25 +187,45 @@ func (s *searchServer) handleConnection(ctx context.Context, laddr *net.UDPAddr,
 
 	ctx = ctxlog.WithFields(ctx, ctxlog.Fields{
 		"local_addr":  laddr,
-		"remote_addr": conn.Addr,
+		"remote_addr": conn.Addr(),
 	})
 
 	c := connection.New(conn, proto.FLAG_FROM_SERVER)
+	c.Version = pvdata.PVByte(2)
 	msg, err := c.Next(ctx)
 	if err != nil {
 		return err
 	}
-
-	ctxlog.L(ctx).Debugf("UDP packet received")
 
 	if msg.Header.MessageCommand == proto.APP_SEARCH_REQUEST {
 		var req proto.SearchRequest
 		if err := msg.Decode(&req); err != nil {
 			return err
 		}
+		ctxlog.L(ctx).Debugf("search request received: %#v", req)
 		// Process search
 		// TODO: Send to local multicast group for other local apps
-
+		// TODO: Clear unicast flag, set response address to raddr if unset, add origin tag prefix,
+		resp := &proto.SearchResponse{
+			GUID:             s.GUID,
+			SearchSequenceID: req.SearchSequenceID,
+			ServerPort:       pvdata.PVUShort(s.ServerPort),
+			Protocol:         "tcp",
+		}
+		copy(resp.ServerAddress[:], []byte(laddr.IP.To16()))
+		var found []pvdata.PVUInt
+		// TODO: Find channels
+		if len(found) == 0 {
+			resp.Found = false
+			for _, channel := range req.Channels {
+				resp.SearchInstanceIDs = append(resp.SearchInstanceIDs, channel.SearchInstanceID)
+			}
+		}
+		if len(found) > 0 || req.Flags&proto.SEARCH_REPLY_REQUIRED == proto.SEARCH_REPLY_REQUIRED {
+			c.SendApp(ctx, proto.APP_SEARCH_RESPONSE, resp)
+			// TODO: Use sendConn
+			// TODO: Send response to req.ResponseAddr if set
+		}
 	}
 	return io.EOF
 }

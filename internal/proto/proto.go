@@ -124,6 +124,11 @@ type ConnectionValidated struct {
 
 // Search
 
+const (
+	SEARCH_REPLY_REQUIRED = 0x80
+	SEARCH_UNICAST        = 0x01
+)
+
 type SearchRequest struct {
 	SearchSequenceID pvdata.PVUInt
 	Flags            pvdata.PVUByte // 0-bit for replyRequired, 7-th bit for "sent as unicast" (1)/"sent as broadcast/multicast" (0)

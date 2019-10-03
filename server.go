@@ -28,8 +28,7 @@ const udpAddr = ":5076"
 const tcpAddr = ":5075"
 
 func (srv *Server) ListenAndServe(ctx context.Context) error {
-	addr := tcpAddr
-	ln, err := net.Listen("tcp", addr)
+	ln, err := net.Listen("tcp", "")
 	if err != nil {
 		return err
 	}
