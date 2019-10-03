@@ -24,62 +24,92 @@ const startupInterval = time.Second
 const startupCount = 15
 const beaconInterval = 5 * time.Second
 
+// Serve transmits beacons and listens for searches on every interface on the machine.
+// If serverAddr specifies an IP, beacons will advertise that address.
+// If it does not, beacons will advertise the address of the interface they are transmitted on.
 func Serve(ctx context.Context, serverAddr *net.TCPAddr) error {
 	var beacon proto.BeaconMessage
 	if _, err := rand.Read(beacon.GUID[:]); err != nil {
 		return err
 	}
-	ips := []*net.IPAddr{{IP: serverAddr.IP, Zone: serverAddr.Zone}}
-	if serverAddr.IP == nil || serverAddr.IP.IsUnspecified() {
-		ips = nil
-		interfaces, err := net.Interfaces()
-		if err != nil {
-			return err
-		}
-		for _, i := range interfaces {
-			addrs, err := i.Addrs()
-			if err != nil {
-				return err
-			}
-			for _, addr := range addrs {
-				if addr, ok := addr.(*net.IPNet); ok {
-					ips = append(ips, &net.IPAddr{IP: addr.IP, Zone: i.Name})
-				}
-			}
-		}
+	if len(serverAddr.IP) > 0 {
+		// TODO: How should IPv4 addresses be aligned?
+		copy(beacon.ServerAddress[:], serverAddr.IP)
 	}
-	ctxlog.L(ctx).Infof("sending beacons on %v", ips)
 	beacon.ServerPort = uint16(serverAddr.Port)
 	beacon.Protocol = "tcp"
 
-	var senders []*sender
-	for _, ip := range ips {
-		var raddr = &net.UDPAddr{
-			IP:   net.IPv6linklocalallnodes,
-			Port: udpPort,
-		}
-		if ip4 := ip.IP.To4(); len(ip4) == net.IPv4len {
-			raddr.IP = net.IPv4bcast
-		}
-		conn, err := net.DialUDP("udp", &net.UDPAddr{IP: ip.IP, Zone: ip.Zone}, raddr)
+	// We need a bunch of sockets.
+	// One socket on INADDR_ANY with a random port to send beacons from
+	// For each interface,
+	//   Listen on addr:5076
+	//     IP_MULTICAST_IF 127.0.0.1
+	//     IP_MULTICAST_LOOP 1
+	//   Listen on broadcast:5076 (if interface has broadcast flag)
+	// One socket listening on 224.0.0.128 on lo
+	//   Listen on 224.0.0.128:5076
+	//   IP_ADD_MEMBERSHIP 224.0.0.128, 127.0.0.1
+
+	sendConn, err := udpconn.NewMulti()
+	if err != nil {
+		return err
+	}
+	beaconSender := connection.New(sendConn, proto.FLAG_FROM_SERVER)
+
+	var ips []*net.UDPAddr
+	var bcasts []*net.UDPAddr
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return err
+	}
+	for _, i := range interfaces {
+		addrs, err := i.Addrs()
 		if err != nil {
 			return err
 		}
-		senders = append(senders, &sender{
-			conn: connection.New(conn, proto.FLAG_FROM_SERVER),
-			ip:   ip.IP,
-		})
-		/*
-			go (&searchServer{
-				GUID: beacon.GUID,
-			}).serve(ctx, &net.UDPAddr{IP: ip.IP, Port: udpPort, Zone: ip.Zone})
-		*/
+		for _, addr := range addrs {
+			if addr, ok := addr.(*net.IPNet); ok {
+				laddr := &net.UDPAddr{
+					IP:   addr.IP,
+					Port: udpPort,
+				}
+				if addr.IP.To4() == nil {
+					laddr.Zone = i.Name
+				}
+				ips = append(ips, laddr)
+
+				var extra []*net.UDPAddr
+
+				if i.Flags&net.FlagBroadcast == net.FlagBroadcast {
+					laddr := &net.UDPAddr{
+						IP:   bcastIP(addr.IP, addr.Mask),
+						Port: laddr.Port,
+						Zone: laddr.Zone,
+					}
+					ips = append(ips, laddr)
+					bcasts = append(bcasts, laddr)
+					extra = append(extra, laddr)
+				}
+				ctxlog.L(ctx).Debugf("Listening on %v + %v", laddr, extra)
+
+				go func() {
+					if err := (&searchServer{
+						GUID: beacon.GUID,
+					}).serve(ctx, laddr, extra); err != nil && err != io.EOF {
+						ctxlog.L(ctx).Errorf("failed handling search request: %v", err)
+					}
+				}()
+			}
+		}
 	}
-
-	go (&searchServer{
-		GUID: beacon.GUID,
-	}).serve(ctx, &net.UDPAddr{Port: udpPort})
-
+	sendConn.SendAddresses = bcasts
+	ctxlog.L(ctx).Infof("sending beacons to %v", bcasts)
+	ctxlog.L(ctx).Infof("listening on %v", ips)
+	/*
+		go (&searchServer{
+			GUID: beacon.GUID,
+		}).serve(ctx, &net.UDPAddr{Port: udpPort})
+	*/
 	ticker := time.NewTicker(startupInterval)
 	defer func() { ticker.Stop() }()
 	i := 0
@@ -89,9 +119,7 @@ func Serve(ctx context.Context, serverAddr *net.TCPAddr) error {
 			return ctx.Err()
 		case <-ticker.C:
 			beacon.BeaconSequenceID++
-			for _, s := range senders {
-				s.send(ctx, beacon)
-			}
+			beaconSender.SendApp(ctx, proto.APP_BEACON, &beacon)
 			i++
 			if i == startupCount {
 				ticker.Stop()
@@ -101,31 +129,38 @@ func Serve(ctx context.Context, serverAddr *net.TCPAddr) error {
 	}
 }
 
-type sender struct {
-	conn *connection.Connection
-	ip   net.IP
-}
-
-func (s sender) send(ctx context.Context, pkt proto.BeaconMessage) error {
-	copy(pkt.ServerAddress[:], s.ip)
-	return s.conn.SendApp(ctx, proto.APP_BEACON, &pkt)
+func bcastIP(ip net.IP, mask net.IPMask) net.IP {
+	if len(mask) == net.IPv4len {
+		ip = ip.To4()
+	}
+	var bcastip net.IP
+	for i := range mask {
+		bcastip = append(bcastip, ip[i]|(^mask[i]))
+	}
+	return bcastip
 }
 
 type searchServer struct {
 	GUID [12]byte
 }
 
-func (s *searchServer) serve(ctx context.Context, laddr *net.UDPAddr) (err error) {
+func (s *searchServer) serve(ctx context.Context, laddr *net.UDPAddr, extra []*net.UDPAddr) (err error) {
 	defer func() {
 		if err != nil {
 			ctxlog.L(ctx).Errorf("error listening for search requests: %v", err)
 		}
 	}()
-	ln, err := udpconn.Listen("udp", laddr)
+	ctx = ctxlog.WithField(ctx, "local_addr", laddr)
+	ln, err := udpconn.Listen(ctx, "udp", laddr)
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
+	for _, e := range extra {
+		if err := ln.AddReadAddress(ctx, "udp", e); err != nil {
+			return err
+		}
+	}
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -137,7 +172,7 @@ func (s *searchServer) serve(ctx context.Context, laddr *net.UDPAddr) (err error
 
 func (s *searchServer) handleConnection(ctx context.Context, laddr *net.UDPAddr, conn *udpconn.Conn) (err error) {
 	defer func() {
-		if err != nil {
+		if err != nil && err != io.EOF {
 			ctxlog.L(ctx).Warnf("error handling UDP packet: %v", err)
 		}
 	}()
