@@ -62,6 +62,7 @@ func Serve(ctx context.Context, serverAddr *net.TCPAddr) error {
 	if err != nil {
 		return err
 	}
+
 	for _, i := range interfaces {
 		addrs, err := i.Addrs()
 		if err != nil {
@@ -75,6 +76,8 @@ func Serve(ctx context.Context, serverAddr *net.TCPAddr) error {
 				}
 				if addr.IP.To4() == nil {
 					laddr.Zone = i.Name
+					// TODO: Figure out what IPv6 multicast group we should use.
+					continue
 				}
 				ips = append(ips, laddr)
 
