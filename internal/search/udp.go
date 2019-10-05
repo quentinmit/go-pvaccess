@@ -107,7 +107,10 @@ func (s *searchServer) serve(ctx context.Context, ln *udpconn.Listener) (err err
 			return err
 		}
 		laddr := conn.LocalAddr()
-		ctx = ctxlog.WithField(ctx, "local_addr", laddr)
+		ctx = ctxlog.WithFields(ctx, ctxlog.Fields{
+			"local_addr": laddr,
+			"proto":      "udp",
+		})
 		go s.handleConnection(ctx, ln, conn)
 	}
 }
