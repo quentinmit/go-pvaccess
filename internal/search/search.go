@@ -107,11 +107,11 @@ func (s *searchServer) serve(ctx context.Context, ln *udpconn.Listener) (err err
 		}
 		laddr := conn.LocalAddr()
 		ctx = ctxlog.WithField(ctx, "local_addr", laddr)
-		go s.handleConnection(ctx, ln.LocalAddr(), conn)
+		go s.handleConnection(ctx, ln, conn)
 	}
 }
 
-func (s *searchServer) handleConnection(ctx context.Context, laddr *net.UDPAddr, conn *udpconn.Conn) (err error) {
+func (s *searchServer) handleConnection(ctx context.Context, ln *udpconn.Listener, conn *udpconn.Conn) (err error) {
 	defer func() {
 		if err != nil && err != io.EOF {
 			ctxlog.L(ctx).Warnf("error handling UDP packet: %v", err)
@@ -123,39 +123,52 @@ func (s *searchServer) handleConnection(ctx context.Context, laddr *net.UDPAddr,
 
 	c := connection.New(conn, proto.FLAG_FROM_SERVER)
 	c.Version = pvdata.PVByte(2)
-	msg, err := c.Next(ctx)
-	if err != nil {
-		return err
-	}
-
-	if msg.Header.MessageCommand == proto.APP_SEARCH_REQUEST {
-		var req proto.SearchRequest
-		if err := msg.Decode(&req); err != nil {
+	for {
+		msg, err := c.Next(ctx)
+		if err != nil {
 			return err
 		}
-		ctxlog.L(ctx).Debugf("search request received: %#v", req)
-		// Process search
-		// TODO: Send to local multicast group for other local apps
-		// TODO: Clear unicast flag, set response address to raddr if unset, add origin tag prefix,
-		resp := &proto.SearchResponse{
-			GUID:             s.GUID,
-			SearchSequenceID: req.SearchSequenceID,
-			ServerPort:       pvdata.PVUShort(s.ServerPort),
-			Protocol:         "tcp",
-		}
-		copy(resp.ServerAddress[:], []byte(laddr.IP.To16()))
-		var found []pvdata.PVUInt
-		// TODO: Find channels
-		if len(found) == 0 {
-			resp.Found = false
-			for _, channel := range req.Channels {
-				resp.SearchInstanceIDs = append(resp.SearchInstanceIDs, channel.SearchInstanceID)
+		switch msg.Header.MessageCommand {
+		case proto.APP_ORIGIN_TAG:
+			var req proto.OriginTag
+			if err := msg.Decode(&req); err != nil {
+				return err
+			}
+			forwarderAddress := net.IP(req.ForwarderAddress[:])
+			if !forwarderAddress.IsUnspecified() {
+				if !ln.IsTappedIP(forwarderAddress) {
+					ctxlog.L(ctx).Infof("ignoring packet with an ORIGIN_TAG of %v that doesn't match a local address", forwarderAddress)
+					return nil
+				}
+			}
+		case proto.APP_SEARCH_REQUEST:
+			var req proto.SearchRequest
+			if err := msg.Decode(&req); err != nil {
+				return err
+			}
+			ctxlog.L(ctx).Debugf("search request received: %#v", req)
+			// Process search
+			// TODO: Send to local multicast group for other local apps
+			// TODO: Clear unicast flag, set response address to raddr if unset, add origin tag prefix,
+			resp := &proto.SearchResponse{
+				GUID:             s.GUID,
+				SearchSequenceID: req.SearchSequenceID,
+				ServerPort:       pvdata.PVUShort(s.ServerPort),
+				Protocol:         "tcp",
+			}
+			copy(resp.ServerAddress[:], []byte(ln.LocalAddr().IP.To16()))
+			var found []pvdata.PVUInt
+			// TODO: Find channels
+			if len(found) == 0 {
+				resp.Found = false
+				for _, channel := range req.Channels {
+					resp.SearchInstanceIDs = append(resp.SearchInstanceIDs, channel.SearchInstanceID)
+				}
+			}
+			if len(found) > 0 || req.Flags&proto.SEARCH_REPLY_REQUIRED == proto.SEARCH_REPLY_REQUIRED {
+				c.SendApp(ctx, proto.APP_SEARCH_RESPONSE, resp)
+				// TODO: Send response to req.ResponseAddr if set
 			}
 		}
-		if len(found) > 0 || req.Flags&proto.SEARCH_REPLY_REQUIRED == proto.SEARCH_REPLY_REQUIRED {
-			c.SendApp(ctx, proto.APP_SEARCH_RESPONSE, resp)
-			// TODO: Send response to req.ResponseAddr if set
-		}
 	}
-	return io.EOF
 }

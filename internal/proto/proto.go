@@ -258,4 +258,8 @@ type ChannelRPCResponse struct {
 }
 
 // cancelRequest
-// originTag
+
+// Origin Tag
+type OriginTag struct {
+	ForwarderAddress [16]byte
+}

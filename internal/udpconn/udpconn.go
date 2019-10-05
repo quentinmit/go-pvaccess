@@ -52,6 +52,7 @@ type Listener struct {
 	sendConn               *net.UDPConn
 	broadcastSendAddresses []*net.UDPAddr
 	lns                    []*net.UDPConn
+	tappedIPs              []net.IP
 	connCh                 chan *Conn
 }
 
@@ -111,6 +112,7 @@ func (ln *Listener) bindInterfaces(ctx context.Context) error {
 					continue
 				}
 				ips = append(ips, laddr)
+				ln.tappedIPs = append(ln.tappedIPs, laddr.IP)
 
 				if err := ln.bindUnicast(ctx, laddr); err != nil {
 					return err
@@ -123,6 +125,7 @@ func (ln *Listener) bindInterfaces(ctx context.Context) error {
 						Zone: laddr.Zone,
 					}
 					ips = append(ips, laddr)
+					ln.tappedIPs = append(ln.tappedIPs, laddr.IP)
 					bcasts = append(bcasts, laddr)
 					if err := ln.bindBroadcast(ctx, laddr); err != nil {
 						return err
@@ -277,6 +280,15 @@ func (ln *Listener) BroadcastConn() *Conn {
 
 func (ln *Listener) BroadcastSendAddresses() []*net.UDPAddr {
 	return ln.broadcastSendAddresses
+}
+
+func (ln *Listener) IsTappedIP(ip net.IP) bool {
+	for _, tip := range ln.tappedIPs {
+		if tip.Equal(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 type Conn struct {
