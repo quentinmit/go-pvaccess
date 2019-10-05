@@ -16,28 +16,33 @@ import (
 	"github.com/quentinmit/go-pvaccess/pvdata"
 )
 
-type server struct {
-	lastBeacon proto.BeaconMessage
-}
-
 const startupInterval = time.Second
 const startupCount = 15
 
 // TODO: EPICS_PVA_BEACON_PERIOD environment variable
 const beaconInterval = 5 * time.Second
 
+// Server handles UDP beacons and searches.
+type Server struct {
+	// GUID is a randomly generated GUID that identifies the server.
+	// It will be filled in by Serve if it is blank.
+	GUID [12]byte
+	// ServerAddr is the TCP address that the TCP server is listening on.
+	ServerAddr *net.TCPAddr
+}
+
 // Serve transmits beacons and listens for searches on every interface on the machine.
-// If serverAddr specifies an IP, beacons will advertise that address.
-// If it does not, beacons will advertise the address of the interface they are transmitted on.
-func Serve(ctx context.Context, serverAddr *net.TCPAddr) error {
-	var beacon proto.BeaconMessage
-	if _, err := rand.Read(beacon.GUID[:]); err != nil {
+func (s *Server) Serve(ctx context.Context) error {
+	if _, err := rand.Read(s.GUID[:]); err != nil {
 		return err
 	}
-	if len(serverAddr.IP) > 0 {
-		copy(beacon.ServerAddress[:], serverAddr.IP.To16())
+	beacon := proto.BeaconMessage{
+		GUID: s.GUID,
 	}
-	beacon.ServerPort = uint16(serverAddr.Port)
+	if len(s.ServerAddr.IP) > 0 {
+		copy(beacon.ServerAddress[:], s.ServerAddr.IP.To16())
+	}
+	beacon.ServerPort = uint16(s.ServerAddr.Port)
 	beacon.Protocol = "tcp"
 
 	// We need a bunch of sockets.
@@ -62,10 +67,7 @@ func Serve(ctx context.Context, serverAddr *net.TCPAddr) error {
 	ctxlog.L(ctx).Infof("sending beacons to %v", ln.BroadcastSendAddresses())
 
 	go func() {
-		if err := (&searchServer{
-			GUID:       beacon.GUID,
-			ServerPort: serverAddr.Port,
-		}).serve(ctx, ln); err != nil && err != io.EOF {
+		if err := s.serveSearch(ctx, ln); err != nil && err != io.EOF {
 			ctxlog.L(ctx).Errorf("failed handling search request: %v", err)
 		}
 	}()
@@ -89,12 +91,7 @@ func Serve(ctx context.Context, serverAddr *net.TCPAddr) error {
 	}
 }
 
-type searchServer struct {
-	GUID       [12]byte
-	ServerPort int
-}
-
-func (s *searchServer) serve(ctx context.Context, ln *udpconn.Listener) (err error) {
+func (s *Server) serveSearch(ctx context.Context, ln *udpconn.Listener) (err error) {
 	defer func() {
 		if err != nil {
 			ctxlog.L(ctx).Errorf("error listening for search requests: %v", err)
@@ -115,7 +112,7 @@ func (s *searchServer) serve(ctx context.Context, ln *udpconn.Listener) (err err
 	}
 }
 
-func (s *searchServer) handleConnection(ctx context.Context, ln *udpconn.Listener, conn *udpconn.Conn) (err error) {
+func (s *Server) handleConnection(ctx context.Context, ln *udpconn.Listener, conn *udpconn.Conn) (err error) {
 	defer func() {
 		if err != nil && err != io.EOF {
 			ctxlog.L(ctx).Warnf("error handling UDP packet: %v", err)
@@ -177,24 +174,7 @@ func (s *searchServer) handleConnection(ctx context.Context, ln *udpconn.Listene
 					Port: int(req.ResponsePort),
 				})
 			}
-			resp := &proto.SearchResponse{
-				GUID:             s.GUID,
-				SearchSequenceID: req.SearchSequenceID,
-				ServerPort:       pvdata.PVUShort(s.ServerPort),
-				Protocol:         "tcp",
-			}
-			copy(resp.ServerAddress[:], []byte(ln.LocalAddr().IP.To16()))
-			var found []pvdata.PVUInt
-			// TODO: Find channels
-			if len(found) == 0 {
-				resp.Found = false
-				for _, channel := range req.Channels {
-					resp.SearchInstanceIDs = append(resp.SearchInstanceIDs, channel.SearchInstanceID)
-				}
-			}
-			if len(found) > 0 || req.Flags&proto.SEARCH_REPLY_REQUIRED == proto.SEARCH_REPLY_REQUIRED {
-				c.SendApp(ctx, proto.APP_SEARCH_RESPONSE, resp)
-			}
+			return s.Search(ctx, c, req)
 		}
 	}
 }

@@ -20,6 +20,7 @@ import (
 )
 
 type Server struct {
+	search *search.Server
 }
 
 const udpAddr = ":5076"
@@ -37,8 +38,11 @@ func (srv *Server) ListenAndServe(ctx context.Context) error {
 
 // TODO: UDP beacon support
 func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
+	srv.search = &search.Server{
+		ServerAddr: l.Addr().(*net.TCPAddr),
+	}
 	go func() {
-		if err := search.Serve(ctx, l.Addr().(*net.TCPAddr)); err != nil {
+		if err := srv.search.Serve(ctx); err != nil {
 			ctxlog.L(ctx).Errorf("failed to serve search requests: %v", err)
 		}
 	}()
