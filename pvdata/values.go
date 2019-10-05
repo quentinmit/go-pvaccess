@@ -508,6 +508,9 @@ func (v PVStructure) PVEncode(s *EncoderState) error {
 		item := v.v.Field(i).Addr()
 		_, tags := parseTag(t.Field(i).Tag.Get("pvaccess"))
 		pvf := valueToPVField(item, tagsToOptions(tags)...)
+		if pvf == nil {
+			return fmt.Errorf("don't know how to encode %#v", item.Interface())
+		}
 		if err := pvf.PVEncode(s); err != nil {
 			return err
 		}
@@ -527,7 +530,11 @@ func (v PVStructure) PVDecode(s *DecoderState) error {
 	for i := 0; i < v.v.NumField(); i++ {
 		item := v.v.Field(i).Addr()
 		_, tags := parseTag(t.Field(i).Tag.Get("pvaccess"))
-		if err := Decode(s, item.Interface()); err != nil {
+		pvf := valueToPVField(item, tagsToOptions(tags)...)
+		if pvf == nil {
+			return fmt.Errorf("don't know how to encode %#v", item.Interface())
+		}
+		if err := pvf.PVDecode(s); err != nil {
 			return err
 		}
 		if _, ok := tags["breakonerror"]; ok {

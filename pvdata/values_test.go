@@ -82,6 +82,14 @@ func TestRoundTrip(t *testing.T) {
 		{exampleStruct, []byte{15, 3, 'y', 'e', 's'}, nil},
 		{PVAny{&anyTargetInt}, []byte{0x21, 0, 12}, []byte{0x21, 12, 0}},
 		{PVAny{nil}, []byte{0xff}, nil},
+		{struct {
+			A bool
+			B []bool
+		}{true, []bool{true}}, []byte{0x01, 0x01, 0x01}, nil},
+		{struct {
+			A bool
+			B []bool `pvaccess:",short"`
+		}{true, []bool{true}}, []byte{0x01, 0x00, 0x01, 0x01}, []byte{0x01, 0x01, 0x00, 0x01}},
 	}
 	for _, test := range tests {
 		name := fmt.Sprintf("%T: %#v", test.in, test.in)
@@ -132,7 +140,7 @@ func TestRoundTrip(t *testing.T) {
 					opvf := valueToPVField(out)
 					out = out.Elem()
 					if in, ok := test.in.(PVArray); ok {
-						pva := PVArray{in.fixed, reflect.MakeSlice(in.v.Type(), in.v.Len(), in.v.Len())}
+						pva := PVArray{in.fixed, in.alwaysShort, reflect.MakeSlice(in.v.Type(), in.v.Len(), in.v.Len())}
 						out = reflect.ValueOf(pva)
 						opvf = PVField(pva)
 					}
