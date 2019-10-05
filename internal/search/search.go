@@ -2,6 +2,7 @@
 package search
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"io"
@@ -148,8 +149,31 @@ func (s *searchServer) handleConnection(ctx context.Context, ln *udpconn.Listene
 			}
 			ctxlog.L(ctx).Debugf("search request received: %#v", req)
 			// Process search
-			// TODO: Send to local multicast group for other local apps
-			// TODO: Clear unicast flag, set response address to raddr if unset, add origin tag prefix,
+			if req.Flags&proto.SEARCH_UNICAST == proto.SEARCH_UNICAST {
+				var buf bytes.Buffer
+				var localAddrArray [16]byte
+				copy(localAddrArray[:], []byte(ln.LocalAddr().IP.To16()))
+				fwdConn := connection.New(&buf, msg.Header.Flags&proto.FLAG_FROM_SERVER)
+				fwdConn.SendApp(ctx, proto.APP_ORIGIN_TAG, &proto.OriginTag{
+					ForwarderAddress: localAddrArray,
+				})
+				fwdReq := req
+				fwdReq.Flags &= ^pvdata.PVUByte(proto.SEARCH_UNICAST)
+				if net.IP(fwdReq.ResponseAddress[:]).IsUnspecified() {
+					copy(fwdReq.ResponseAddress[:], conn.Addr().IP)
+				}
+				fwdConn.SendApp(ctx, proto.APP_SEARCH_REQUEST, &fwdReq)
+				if _, err := ln.WriteMulticast(buf.Bytes()); err != nil {
+					ctxlog.L(ctx).Warnf("failed to forward search to multicast group: %v", err)
+				}
+			}
+			responseAddr := net.IP(req.ResponseAddress[:])
+			if len(responseAddr) > 0 && !responseAddr.IsUnspecified() {
+				conn.SetSendAddress(&net.UDPAddr{
+					IP:   responseAddr,
+					Port: int(req.ResponsePort),
+				})
+			}
 			resp := &proto.SearchResponse{
 				GUID:             s.GUID,
 				SearchSequenceID: req.SearchSequenceID,
@@ -167,7 +191,6 @@ func (s *searchServer) handleConnection(ctx context.Context, ln *udpconn.Listene
 			}
 			if len(found) > 0 || req.Flags&proto.SEARCH_REPLY_REQUIRED == proto.SEARCH_REPLY_REQUIRED {
 				c.SendApp(ctx, proto.APP_SEARCH_RESPONSE, resp)
-				// TODO: Send response to req.ResponseAddr if set
 			}
 		}
 	}

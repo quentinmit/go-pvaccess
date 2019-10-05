@@ -278,6 +278,13 @@ func (ln *Listener) BroadcastConn() *Conn {
 	}
 }
 
+func (ln *Listener) WriteMulticast(p []byte) (int, error) {
+	return ln.sendConn.WriteToUDP(p, &net.UDPAddr{
+		IP:   mcastIP,
+		Port: udpPort,
+	})
+}
+
 func (ln *Listener) BroadcastSendAddresses() []*net.UDPAddr {
 	return ln.broadcastSendAddresses
 }
