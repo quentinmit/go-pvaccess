@@ -174,6 +174,7 @@ var serverDispatch = map[pvdata.PVByte]func(c *serverConn, ctx context.Context, 
 	proto.APP_CONNECTION_VALIDATION: (*serverConn).handleConnectionValidation,
 	proto.APP_CHANNEL_CREATE:        (*serverConn).handleCreateChannelRequest,
 	proto.APP_CHANNEL_RPC:           (*serverConn).handleChannelRPC,
+	proto.APP_SEARCH_REQUEST:        (*serverConn).handleSearchRequest,
 }
 
 func (c *serverConn) handleConnectionValidation(ctx context.Context, msg *connection.Message) error {
@@ -368,4 +369,13 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 		}()
 		return asyncOperation
 	}
+}
+
+func (c *serverConn) handleSearchRequest(ctx context.Context, msg *connection.Message) error {
+	var req proto.SearchRequest
+	if err := msg.Decode(&req); err != nil {
+		return err
+	}
+	ctxlog.L(ctx).Infof("received search request %#v", req)
+	return c.srv.search.Search(ctx, c.Connection, req)
 }
