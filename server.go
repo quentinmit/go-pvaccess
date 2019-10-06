@@ -21,6 +21,7 @@ import (
 
 type Server struct {
 	search *search.Server
+	ln     net.Listener
 }
 
 const udpAddr = ":5076"
@@ -41,13 +42,14 @@ func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
 	srv.search = &search.Server{
 		ServerAddr: l.Addr().(*net.TCPAddr),
 	}
+	srv.ln = l
 	go func() {
 		if err := srv.search.Serve(ctx); err != nil {
 			ctxlog.L(ctx).Errorf("failed to serve search requests: %v", err)
 		}
 	}()
 	for {
-		conn, err := l.Accept()
+		conn, err := srv.ln.Accept()
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
 				time.Sleep(5 * time.Millisecond)
@@ -124,7 +126,11 @@ func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
 
 func (srv *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
-	ctx = ctxlog.WithField(ctx, "remote_addr", conn.RemoteAddr())
+	ctx = ctxlog.WithFields(ctx, ctxlog.Fields{
+		"local_addr":  srv.ln.Addr(),
+		"remote_addr": conn.RemoteAddr(),
+		"proto":       "tcp",
+	})
 	c := srv.newConn(conn)
 	ctxlog.L(ctx).Infof("new connection")
 	if err := c.serve(ctx); err != nil {
