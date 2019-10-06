@@ -33,8 +33,10 @@ type Server struct {
 
 // Serve transmits beacons and listens for searches on every interface on the machine.
 func (s *Server) Serve(ctx context.Context) error {
-	if _, err := rand.Read(s.GUID[:]); err != nil {
-		return err
+	if s.GUID == [12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0} {
+		if _, err := rand.Read(s.GUID[:]); err != nil {
+			return err
+		}
 	}
 	beacon := proto.BeaconMessage{
 		GUID: s.GUID,
