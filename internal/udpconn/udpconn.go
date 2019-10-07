@@ -206,9 +206,16 @@ func (ln *Listener) bindMulticast(ctx context.Context) error {
 		laddr.IP = nil
 	}
 	ctxlog.L(ctx).Infof("UDP listening on %v", laddr)
-	udpConn, _, err := listen(ctx, "udp4", laddr.String())
+	udpConn, cleanup, err := listenMulticast(ctx, laddr)
 	if err != nil {
 		return fmt.Errorf("listen %v: %v", laddr, err)
+	}
+	if cleanup != nil {
+		ln.g.Go(func() error {
+			<-ctx.Done()
+			cleanup()
+			return nil
+		})
 	}
 	rawConn, err := udpConn.SyscallConn()
 	if err != nil {
