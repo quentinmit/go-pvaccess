@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
+	"golang.org/x/sync/errgroup"
 )
 
 var mcastIP = net.IP{224, 0, 0, 128}
@@ -54,6 +55,7 @@ type Listener struct {
 	lns                    []*net.UDPConn
 	tappedIPs              []net.IP
 	connCh                 chan *Conn
+	g                      errgroup.Group
 }
 
 func Listen(ctx context.Context) (*Listener, error) {
@@ -203,6 +205,7 @@ func (ln *Listener) bindMulticast(ctx context.Context) error {
 	if runtime.GOOS == "windows" {
 		laddr.IP = nil
 	}
+	ctxlog.L(ctx).Infof("UDP listening on %v", laddr)
 	udpConn, _, err := listen(ctx, "udp4", laddr.String())
 	if err != nil {
 		return fmt.Errorf("listen %v: %v", laddr, err)
@@ -230,7 +233,7 @@ func (ln *Listener) bindMulticast(ctx context.Context) error {
 
 func (ln *Listener) addConn(ctx context.Context, udpConn *net.UDPConn) error {
 	ln.lns = append(ln.lns, udpConn)
-	go ln.readLoop(ctx, udpConn)
+	ln.g.Go(func() error { ln.readLoop(ctx, udpConn); return nil })
 	return nil
 }
 
@@ -266,6 +269,7 @@ func (ln *Listener) Close() (err error) {
 			err = cerr
 		}
 	}
+	ln.g.Wait()
 	return
 }
 

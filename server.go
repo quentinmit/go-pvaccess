@@ -17,6 +17,7 @@ import (
 	"github.com/quentinmit/go-pvaccess/internal/proto"
 	"github.com/quentinmit/go-pvaccess/internal/search"
 	"github.com/quentinmit/go-pvaccess/pvdata"
+	"golang.org/x/sync/errgroup"
 )
 
 type Server struct {
@@ -43,27 +44,42 @@ func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
 		ServerAddr: l.Addr().(*net.TCPAddr),
 	}
 	srv.ln = l
-	go func() {
+	var g errgroup.Group
+	g.Go(func() error {
+		<-ctx.Done()
+		ctxlog.L(ctx).Infof("PVAccess server shutting down")
+		return srv.ln.Close()
+	})
+	g.Go(func() error {
 		if err := srv.search.Serve(ctx); err != nil {
 			ctxlog.L(ctx).Errorf("failed to serve search requests: %v", err)
-		}
-	}()
-	for {
-		conn, err := srv.ln.Accept()
-		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				time.Sleep(5 * time.Millisecond)
-				continue
-			}
 			return err
 		}
-		go srv.handleConnection(ctx, conn)
-	}
+		return nil
+	})
+	g.Go(func() error {
+		for {
+			conn, err := srv.ln.Accept()
+			if err != nil {
+				if ne, ok := err.(net.Error); ok && ne.Temporary() {
+					time.Sleep(5 * time.Millisecond)
+					continue
+				}
+				return err
+			}
+			g.Go(func() error {
+				srv.handleConnection(ctx, conn)
+				return nil
+			})
+		}
+	})
+	return g.Wait()
 }
 
 type serverConn struct {
 	*connection.Connection
 	srv *Server
+	g   *errgroup.Group
 
 	mu       sync.Mutex
 	channels map[pvdata.PVInt]*connChannel
@@ -132,8 +148,13 @@ func (srv *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		"proto":       "tcp",
 	})
 	c := srv.newConn(conn)
-	ctxlog.L(ctx).Infof("new connection")
-	if err := c.serve(ctx); err != nil {
+	g, ctx := errgroup.WithContext(ctx)
+	c.g = g
+	g.Go(func() error {
+		ctxlog.L(ctx).Infof("new connection")
+		return c.serve(ctx)
+	})
+	if err := g.Wait(); err != nil {
 		ctxlog.L(ctx).Errorf("error on connection: %v", err)
 	}
 }
@@ -354,7 +375,7 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 		ctx, cancel := context.WithCancel(ctx)
 		r.status = REQUEST_IN_PROGRESS
 		r.cancel = cancel
-		go func() {
+		c.g.Go(func() error {
 			respData, err := channel.handleRPC(ctx, args)
 			resp := &proto.ChannelRPCResponse{
 				RequestID:      req.RequestID,
@@ -372,7 +393,8 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 			if req.Subcommand&proto.CHANNEL_RPC_DESTROY == proto.CHANNEL_RPC_DESTROY {
 				r.status = DESTROYED
 			}
-		}()
+			return nil
+		})
 		return asyncOperation
 	}
 }
