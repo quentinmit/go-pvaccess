@@ -190,6 +190,7 @@ func (ln *Listener) bindUnicast(ctx context.Context, laddr *net.UDPAddr) error {
 }
 
 func (ln *Listener) bindBroadcast(ctx context.Context, laddr *net.UDPAddr) error {
+	// TODO(quentin): On Darwin 18.5.0 (macOS 10.14.4) these broadcast sockets sometimes seem to leak past the exit of the program (!)
 	udpConn, _, err := listen(ctx, "udp", laddr.String())
 	if err != nil {
 		return fmt.Errorf("listen %v: %v", laddr, err)
