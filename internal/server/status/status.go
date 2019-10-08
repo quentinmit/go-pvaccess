@@ -55,6 +55,21 @@ func (c *Channel) ChannelRPC(ctx context.Context, args pvdata.PVStructure) (inte
 
 	switch op {
 	case "channels":
+		resp := &struct {
+			Value []string `pvaccess:"value"`
+		}{}
+		// TODO: List channels in parallel
+		for _, p := range c.Server.ChannelProviders() {
+			if p, ok := p.(types.ChannelLister); ok {
+				channels, err := p.ChannelList(ctx)
+				if err != nil {
+					ctxlog.L(ctx).Errorf("failed to list channels on %v", p)
+					continue
+				}
+				resp.Value = append(resp.Value, channels...)
+			}
+		}
+		return pvdata.NewPVStructure(resp, "epics:nt/NTScalarArray:1.0"), nil
 	case "info":
 		hostname, _ := os.Hostname()
 		info := &struct {

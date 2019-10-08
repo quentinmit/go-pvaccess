@@ -38,5 +38,10 @@ func main() {
 		ctxlog.L(ctx).Fatalf("creating server: %v", err)
 	}
 	s.DisableSearch = *disableSearch
+
+	c := &pvaccess.SimpleChannel{ChannelName: "gopvtest"}
+	c.Set(1)
+	s.AddChannelProvider(c)
+
 	s.ListenAndServe(ctx)
 }

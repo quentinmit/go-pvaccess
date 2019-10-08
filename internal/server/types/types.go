@@ -19,14 +19,16 @@ type ChannelFinder interface {
 }
 
 // Channel represents the minimal channel.
+//
 // For a channel to be useful, it must implement one of the following additional interfaces:
-// CreateChannelProcess
-// CreateChannelGet
-// CreateChannelPut
-// CreateChannelPutGet
-// CreateChannelRPC
-// CreateMonitor
-// CreateChannelArray
+//
+// - CreateChannelProcess
+// - CreateChannelGet
+// - CreateChannelPut
+// - CreateChannelPutGet
+// - CreateChannelRPC
+// - CreateMonitor
+// - CreateChannelArray
 type Channel interface {
 	Name() string
 }
