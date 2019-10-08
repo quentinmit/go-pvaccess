@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
-	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -23,12 +20,21 @@ import (
 type Server struct {
 	search *search.Server
 	ln     net.Listener
+
+	mu               sync.RWMutex
+	channelProviders []ChannelProvider
 }
 
 const udpAddr = ":5076"
 
 // TODO: Pick a random TCP port for each server and announce it in beacons
 const tcpAddr = ":5075"
+
+func NewServer() (*Server, error) {
+	s := &Server{}
+	s.channelProviders = []ChannelProvider{&serverChannel{s}}
+	return s, nil
+}
 
 func (srv *Server) ListenAndServe(ctx context.Context) error {
 	ln, err := net.Listen("tcp", "")
@@ -82,7 +88,7 @@ type serverConn struct {
 	g   *errgroup.Group
 
 	mu       sync.Mutex
-	channels map[pvdata.PVInt]*connChannel
+	channels map[pvdata.PVInt]Channel
 	requests map[pvdata.PVInt]*request
 }
 
@@ -114,6 +120,7 @@ func (r requestStatus) String() string {
 }
 
 type request struct {
+	doer   interface{}
 	cancel func()
 	status requestStatus
 }
@@ -135,7 +142,7 @@ func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
 	return &serverConn{
 		Connection: c,
 		srv:        srv,
-		channels:   make(map[pvdata.PVInt]*connChannel),
+		channels:   make(map[pvdata.PVInt]Channel),
 		requests:   make(map[pvdata.PVInt]*request),
 	}
 }
@@ -224,77 +231,21 @@ func (c *serverConn) handleCreateChannelRequest(ctx context.Context, msg *connec
 		ch := req.Channels[0]
 		ctxlog.L(ctx).Infof("received request to create channel %q as client channel ID %x", ch.ChannelName, ch.ClientChannelID)
 		resp.ClientChannelID = ch.ClientChannelID
-		if ch.ChannelName == "server" {
+		channel, err := c.createChannel(ctx, ch.ClientChannelID, ch.ChannelName)
+		if err != nil {
+			resp.Status = errorToStatus(err)
+		} else if channel != nil {
 			resp.ServerChannelID = ch.ClientChannelID
-			c.mu.Lock()
-			c.channels[ch.ClientChannelID] = &connChannel{
-				name:      ch.ChannelName,
-				handleRPC: c.handleServerRPC,
-			}
-			c.mu.Unlock()
 		} else {
 			resp.Status.Type = pvdata.PVStatus_ERROR
 			resp.Status.Message = pvdata.PVString(fmt.Sprintf("unknown channel %q", ch.ChannelName))
 		}
+		ctxlog.L(ctx).Infof("channel status = %v", resp.Status)
 	} else {
 		resp.Status.Type = pvdata.PVStatus_ERROR
 		resp.Status.Message = "wrong number of channels"
 	}
 	return c.SendApp(ctx, proto.APP_CHANNEL_CREATE, &resp)
-}
-
-func (c *serverConn) handleServerRPC(ctx context.Context, args pvdata.PVStructure) (response interface{}, err error) {
-	if strings.HasPrefix(args.ID, "epics:nt/NTURI:1.") {
-		if q, ok := args.SubField("query").(*pvdata.PVStructure); ok {
-			args = *q
-		} else {
-			return struct{}{}, pvdata.PVStatus{
-				Type:    pvdata.PVStatus_ERROR,
-				Message: pvdata.PVString("invalid argument"),
-			}
-		}
-	}
-
-	if args.SubField("help") != nil {
-		// TODO
-	}
-
-	var op pvdata.PVString
-	if v, ok := args.SubField("op").(*pvdata.PVString); ok {
-		op = *v
-	}
-
-	ctxlog.L(ctx).Debugf("op = %s", op)
-
-	switch op {
-	case "channels":
-	case "info":
-		hostname, _ := os.Hostname()
-		info := &struct {
-			Process   string `pvaccess:"process"`
-			StartTime string `pvaccess:"startTime"`
-			Version   string `pvaccess:"version"`
-			ImplLang  string `pvaccess:"implLang"`
-			Host      string `pvaccess:"host"`
-			OS        string `pvaccess:"os"`
-			Arch      string `pvaccess:"arch"`
-		}{
-			os.Args[0],
-			"sometime",
-			"1.0",
-			"Go",
-			hostname,
-			runtime.GOOS,
-			runtime.GOARCH,
-		}
-		ctxlog.L(ctx).Debugf("returning info %+v", info)
-		return info, nil
-	}
-
-	return &struct{}{}, pvdata.PVStatus{
-		Type:    pvdata.PVStatus_ERROR,
-		Message: pvdata.PVString("invalid argument"),
-	}
 }
 
 // asyncOperation is a sentinel error to halt the current response in favor of a later asynchronous reply.
@@ -341,27 +292,36 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 	if channel == nil {
 		return fmt.Errorf("unknown channel ID %x", req.ServerChannelID)
 	}
-	if channel.handleRPC == nil {
-		return fmt.Errorf("channel %q (ID %x) does not support RPC", channel.name, req.ServerChannelID)
-	}
 	ctx = ctxlog.WithFields(ctx, ctxlog.Fields{
-		"channel":    channel.name,
+		"channel":    channel.Name(),
 		"channel_id": req.ServerChannelID,
 		"request_id": req.RequestID,
 	})
 	ctxlog.L(ctx).Debugf("channel = %#v", channel)
+	args, ok := req.PVRequest.Data.(pvdata.PVStructure)
+	if !ok {
+		return fmt.Errorf("RPC arguments were of type %T, expected PVStructure", req.PVRequest.Data)
+	}
 	switch req.Subcommand {
 	case proto.CHANNEL_RPC_INIT:
-		ctxlog.L(ctx).Printf("received request to init channel RPC with body %v", req.PVRequest.Data)
-		if err := c.addRequest(req.RequestID, &request{status: READY}); err != nil {
+		ctxlog.L(ctx).Printf("received request to init channel RPC with body %v", args)
+		var rpcer ChannelRPCer
+		if rpcc, ok := channel.(ChannelRPCCreator); ok {
+			var err error
+			rpcer, err = rpcc.CreateChannelRPC(ctx, args)
+			if err != nil {
+				return err
+			}
+		} else if r, ok := channel.(ChannelRPCer); ok {
+			rpcer = r
+		} else {
+			return fmt.Errorf("channel %q (ID %x) does not support RPC", channel.Name(), req.ServerChannelID)
+		}
+		if err := c.addRequest(req.RequestID, &request{doer: rpcer, status: READY}); err != nil {
 			return err
 		}
 		return nil
 	default:
-		args, ok := req.PVRequest.Data.(pvdata.PVStructure)
-		if !ok {
-			return fmt.Errorf("RPC arguments were of type %T, expected PVStructure", req.PVRequest.Data)
-		}
 		ctxlog.L(ctx).Printf("received request to execute channel RPC with body %v", args)
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -372,11 +332,15 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 				Message: pvdata.PVString("request not READY"),
 			}
 		}
+		rpcer, ok := r.doer.(ChannelRPCer)
+		if !ok {
+			return errors.New("request not for RPC")
+		}
 		ctx, cancel := context.WithCancel(ctx)
 		r.status = REQUEST_IN_PROGRESS
 		r.cancel = cancel
 		c.g.Go(func() error {
-			respData, err := channel.handleRPC(ctx, args)
+			respData, err := rpcer.ChannelRPC(ctx, args)
 			resp := &proto.ChannelRPCResponse{
 				RequestID:      req.RequestID,
 				Subcommand:     req.Subcommand,

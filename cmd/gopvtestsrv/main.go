@@ -22,6 +22,9 @@ func main() {
 		ctxlog.L(ctx).Infof("received signal %s; exiting", sig)
 		cancel()
 	}()
-	s := &pvaccess.Server{}
+	s, err := pvaccess.NewServer()
+	if err != nil {
+		ctxlog.L(ctx).Fatalf("creating server: %v", err)
+	}
 	s.ListenAndServe(ctx)
 }
