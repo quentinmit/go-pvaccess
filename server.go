@@ -52,6 +52,7 @@ func (srv *Server) ListenAndServe(ctx context.Context) error {
 func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
 	srv.search = &search.Server{
 		ServerAddr: l.Addr().(*net.TCPAddr),
+		Server:     srv,
 	}
 	srv.ln = l
 	ctxlog.L(ctx).Infof("PVAccess server listening on %v", srv.ln.Addr())

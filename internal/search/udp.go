@@ -12,6 +12,7 @@ import (
 	"github.com/quentinmit/go-pvaccess/internal/connection"
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
 	"github.com/quentinmit/go-pvaccess/internal/proto"
+	"github.com/quentinmit/go-pvaccess/internal/server/types"
 	"github.com/quentinmit/go-pvaccess/internal/udpconn"
 	"github.com/quentinmit/go-pvaccess/pvdata"
 )
@@ -22,6 +23,10 @@ const startupCount = 15
 // TODO: EPICS_PVA_BEACON_PERIOD environment variable
 const beaconInterval = 5 * time.Second
 
+type ChannelProviderser interface {
+	ChannelProviders() []types.ChannelProvider
+}
+
 // Server handles UDP beacons and searches.
 type Server struct {
 	// GUID is a randomly generated GUID that identifies the server.
@@ -29,6 +34,8 @@ type Server struct {
 	GUID [12]byte
 	// ServerAddr is the TCP address that the TCP server is listening on.
 	ServerAddr *net.TCPAddr
+
+	Server ChannelProviderser
 }
 
 // Serve transmits beacons and listens for searches on every interface on the machine.
