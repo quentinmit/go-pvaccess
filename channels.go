@@ -61,7 +61,7 @@ func (conn *serverConn) createChannel(ctx context.Context, channelID pvdata.PVIn
 				return nil
 			}
 			if c != nil {
-				c = channel
+				channel = c
 				return context.Canceled
 			}
 			return nil

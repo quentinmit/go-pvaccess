@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,8 +13,18 @@ import (
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
 )
 
+var (
+	disableSearch = flag.Bool("disable_search", false, "disable UDP beacon/search support")
+	verbose       = flag.Bool("v", false, "verbose mode")
+)
+
 func main() {
-	log.SetLevel(log.TraceLevel)
+	flag.Parse()
+
+	log.SetLevel(log.InfoLevel)
+	if *verbose {
+		log.SetLevel(log.TraceLevel)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -26,5 +37,6 @@ func main() {
 	if err != nil {
 		ctxlog.L(ctx).Fatalf("creating server: %v", err)
 	}
+	s.DisableSearch = *disableSearch
 	s.ListenAndServe(ctx)
 }

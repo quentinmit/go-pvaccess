@@ -18,6 +18,8 @@ import (
 )
 
 type Server struct {
+	DisableSearch bool
+
 	search *search.Server
 	ln     net.Listener
 
@@ -50,19 +52,22 @@ func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
 		ServerAddr: l.Addr().(*net.TCPAddr),
 	}
 	srv.ln = l
+	ctxlog.L(ctx).Infof("PVAccess server listening on %v", srv.ln.Addr())
 	var g errgroup.Group
 	g.Go(func() error {
 		<-ctx.Done()
 		ctxlog.L(ctx).Infof("PVAccess server shutting down")
 		return srv.ln.Close()
 	})
-	g.Go(func() error {
-		if err := srv.search.Serve(ctx); err != nil {
-			ctxlog.L(ctx).Errorf("failed to serve search requests: %v", err)
-			return err
-		}
-		return nil
-	})
+	if !srv.DisableSearch {
+		g.Go(func() error {
+			if err := srv.search.Serve(ctx); err != nil {
+				ctxlog.L(ctx).Errorf("failed to serve search requests: %v", err)
+				return err
+			}
+			return nil
+		})
+	}
 	g.Go(func() error {
 		for {
 			conn, err := srv.ln.Accept()
