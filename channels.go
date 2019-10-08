@@ -5,42 +5,17 @@ import (
 	"fmt"
 
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
+	"github.com/quentinmit/go-pvaccess/internal/server/types"
 	"github.com/quentinmit/go-pvaccess/pvdata"
 	"golang.org/x/sync/errgroup"
 )
 
-// ChannelProvider represents the minimal channel provider.
-// Optionally, a channel provider may implement ChannelLister or ChannelFinder.
-type ChannelProvider interface {
-	CreateChannel(ctx context.Context, name string) (Channel, error)
-}
-type ChannelLister interface {
-	ChannelList(ctx context.Context) ([]string, error)
-}
-type ChannelFinder interface {
-	ChannelFind(ctx context.Context, name string) (bool, error)
-}
-
-// Channel represents the minimal channel.
-// For a channel to be useful, it must implement one of the following additional interfaces:
-// CreateChannelProcess
-// CreateChannelGet
-// CreateChannelPut
-// CreateChannelPutGet
-// CreateChannelRPC
-// CreateMonitor
-// CreateChannelArray
-type Channel interface {
-	Name() string
-}
-
-type ChannelRPCCreator interface {
-	CreateChannelRPC(ctx context.Context, req pvdata.PVStructure) (ChannelRPCer, error)
-}
-
-type ChannelRPCer interface {
-	ChannelRPC(ctx context.Context, req pvdata.PVStructure) (response interface{}, err error)
-}
+type ChannelProvider = types.ChannelProvider
+type ChannelLister = types.ChannelLister
+type ChannelFinder = types.ChannelFinder
+type Channel = types.Channel
+type ChannelRPCCreator = types.ChannelRPCCreator
+type ChannelRPCer = types.ChannelRPCer
 
 func (conn *serverConn) createChannel(ctx context.Context, channelID pvdata.PVInt, name string) (Channel, error) {
 	conn.mu.Lock()

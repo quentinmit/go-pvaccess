@@ -1,4 +1,4 @@
-package pvaccess
+package status
 
 import (
 	"context"
@@ -7,25 +7,30 @@ import (
 	"strings"
 
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
+	"github.com/quentinmit/go-pvaccess/internal/server/types"
 	"github.com/quentinmit/go-pvaccess/pvdata"
 )
 
-type serverChannel struct {
-	srv *Server
+type ChannelProviderser interface {
+	ChannelProviders() []types.ChannelProvider
 }
 
-func (serverChannel) Name() string {
+type Channel struct {
+	Server ChannelProviderser
+}
+
+func (Channel) Name() string {
 	return "server"
 }
 
-func (c *serverChannel) CreateChannel(ctx context.Context, name string) (Channel, error) {
+func (c *Channel) CreateChannel(ctx context.Context, name string) (types.Channel, error) {
 	if name == c.Name() {
 		return c, nil
 	}
 	return nil, nil
 }
 
-func (c *serverChannel) ChannelRPC(ctx context.Context, args pvdata.PVStructure) (interface{}, error) {
+func (c *Channel) ChannelRPC(ctx context.Context, args pvdata.PVStructure) (interface{}, error) {
 	if strings.HasPrefix(args.ID, "epics:nt/NTURI:1.") {
 		if q, ok := args.SubField("query").(*pvdata.PVStructure); ok {
 			args = *q

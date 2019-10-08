@@ -13,6 +13,7 @@ import (
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
 	"github.com/quentinmit/go-pvaccess/internal/proto"
 	"github.com/quentinmit/go-pvaccess/internal/search"
+	"github.com/quentinmit/go-pvaccess/internal/server/status"
 	"github.com/quentinmit/go-pvaccess/pvdata"
 	"golang.org/x/sync/errgroup"
 )
@@ -29,15 +30,16 @@ type Server struct {
 
 const udpAddr = ":5076"
 
-// TODO: Pick a random TCP port for each server and announce it in beacons
+// TODO: Use this port if it's available.
 const tcpAddr = ":5075"
 
 func NewServer() (*Server, error) {
 	s := &Server{}
-	s.channelProviders = []ChannelProvider{&serverChannel{s}}
+	s.channelProviders = []ChannelProvider{&status.Channel{s}}
 	return s, nil
 }
 
+// ListenAndServe listens on a random port and then calls Serve.
 func (srv *Server) ListenAndServe(ctx context.Context) error {
 	ln, err := net.Listen("tcp", "")
 	if err != nil {
@@ -46,7 +48,7 @@ func (srv *Server) ListenAndServe(ctx context.Context) error {
 	return srv.Serve(ctx, ln)
 }
 
-// TODO: UDP beacon support
+// Serve runs a PVAccess server on l until the context is cancelled.
 func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
 	srv.search = &search.Server{
 		ServerAddr: l.Addr().(*net.TCPAddr),
@@ -85,6 +87,18 @@ func (srv *Server) Serve(ctx context.Context, l net.Listener) error {
 		}
 	})
 	return g.Wait()
+}
+
+func (s *Server) AddChannelProvider(provider ChannelProvider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.channelProviders = append(s.channelProviders, provider)
+}
+
+func (s *Server) ChannelProviders() []ChannelProvider {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]ChannelProvider{}, s.channelProviders...)
 }
 
 type serverConn struct {
