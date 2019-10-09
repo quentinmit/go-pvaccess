@@ -30,6 +30,14 @@ func (c *Channel) CreateChannel(ctx context.Context, name string) (types.Channel
 	return nil, nil
 }
 
+type NTScalarArray struct {
+	Value []string `pvaccess:"value"`
+}
+
+func (NTScalarArray) TypeID() string {
+	return "epics:nt/NTScalarArray:1.0"
+}
+
 func (c *Channel) ChannelRPC(ctx context.Context, args pvdata.PVStructure) (interface{}, error) {
 	if strings.HasPrefix(args.ID, "epics:nt/NTURI:1.") {
 		if q, ok := args.SubField("query").(*pvdata.PVStructure); ok {
@@ -55,9 +63,7 @@ func (c *Channel) ChannelRPC(ctx context.Context, args pvdata.PVStructure) (inte
 
 	switch op {
 	case "channels":
-		resp := &struct {
-			Value []string `pvaccess:"value"`
-		}{}
+		resp := &NTScalarArray{}
 		// TODO: List channels in parallel
 		for _, p := range c.Server.ChannelProviders() {
 			if p, ok := p.(types.ChannelLister); ok {
@@ -69,7 +75,7 @@ func (c *Channel) ChannelRPC(ctx context.Context, args pvdata.PVStructure) (inte
 				resp.Value = append(resp.Value, channels...)
 			}
 		}
-		return pvdata.NewPVStructure(resp, "epics:nt/NTScalarArray:1.0"), nil
+		return resp, nil
 	case "info":
 		hostname, _ := os.Hostname()
 		info := &struct {

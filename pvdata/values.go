@@ -497,8 +497,9 @@ func (v PVBoundedString) Field() (Field, error) {
 // Structure types
 
 type PVStructure struct {
-	ID string
-	v  reflect.Value
+	ID           string
+	decodeFields []string
+	v            reflect.Value
 }
 
 // NewPVStructure creates a PVStructure with a given type ID from a pointer to a struct type.
@@ -519,8 +520,12 @@ func NewPVStructure(data interface{}, id string) PVStructure {
 func (v PVStructure) PVEncode(s *EncoderState) error {
 	t := v.v.Type()
 	for i := 0; i < v.v.NumField(); i++ {
-		item := v.v.Field(i).Addr()
+		vf := v.v.Field(i)
 		_, tags := parseTag(t.Field(i).Tag.Get("pvaccess"))
+		if tags["omitifnil"] != "" && vf.Kind() == reflect.Ptr && (!vf.IsValid() || vf.IsNil()) {
+			continue
+		}
+		item := vf.Addr()
 		pvf := valueToPVField(item, tagsToOptions(tags)...)
 		if pvf == nil {
 			return fmt.Errorf("don't know how to encode %#v", item.Interface())
@@ -567,9 +572,13 @@ func (v PVStructure) Field() (Field, error) {
 	var fields []StructFieldDesc
 	t := v.v.Type()
 	for i := 0; i < v.v.NumField(); i++ {
-		name, _ := parseTag(t.Field(i).Tag.Get("pvaccess"))
+		name, tags := parseTag(t.Field(i).Tag.Get("pvaccess"))
 		if name == "" {
 			name = t.Field(i).Name
+		}
+		vf := v.v.Field(i)
+		if tags["omitifnil"] != "" && vf.Kind() == reflect.Ptr && (!vf.IsValid() || vf.IsNil()) {
+			continue
 		}
 		f, err := valueToField(v.v.Field(i))
 		if err != nil {
@@ -890,7 +899,15 @@ func (f Field) createZero() (PVField, error) {
 		}
 	}
 	if f.TypeCode == STRUCT {
-		// TODO: Support NT types specially?
+		if f.StructType != "" {
+			for _, t := range ntTypes {
+				if string(f.StructType) == t.TypeID() {
+					val := reflect.New(reflect.TypeOf(t)).Elem()
+					return PVStructure{ID: string(f.StructType), v: val}, nil
+				}
+			}
+		}
+		// TODO: Support other NT types specially?
 		var fields []reflect.StructField
 		var zeros []PVField
 		for _, field := range f.Fields {
@@ -921,7 +938,7 @@ func (f Field) createZero() (PVField, error) {
 			}
 			val.Elem().Field(i).Set(v)
 		}
-		pvs := PVStructure{string(f.StructType), val.Elem()}
+		pvs := PVStructure{ID: string(f.StructType), v: val.Elem()}
 		return pvs, nil
 	}
 	return nil, fmt.Errorf("don't know how to create zero value for %#v", f)

@@ -55,7 +55,7 @@ func boundOption(bound int64) option {
 func nameOption(name string) option {
 	return func(v reflect.Value) PVField {
 		if v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Struct {
-			return PVStructure{name, v.Elem()}
+			return PVStructure{ID: name, v: v.Elem()}
 		}
 		return nil
 	}
@@ -91,6 +91,10 @@ func tagsToOptions(tags map[string]string) []option {
 		options = append(options, shortOption())
 	}
 	return options
+}
+
+type TypeIDer interface {
+	TypeID() string
 }
 
 func valueToPVField(v reflect.Value, options ...option) PVField {
@@ -145,7 +149,11 @@ func valueToPVField(v reflect.Value, options ...option) PVField {
 	case reflect.Array:
 		return PVArray{fixed: true, v: v}
 	case reflect.Struct:
-		return PVStructure{"", v}
+		var typeID string
+		if v, ok := v.Interface().(TypeIDer); ok {
+			typeID = v.TypeID()
+		}
+		return PVStructure{ID: typeID, v: v}
 	}
 	return nil
 }
