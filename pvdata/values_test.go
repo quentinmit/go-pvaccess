@@ -185,12 +185,10 @@ func TestStructureBitSetDecode(t *testing.T) {
 	testStruct := structT{11, 12, []byte{32}, struct{ Three, Four byte }{13, 14}}
 	bitSet := NewBitSetWithBits(1, 5)
 	s := &DecoderState{
-		Buf:                bytes.NewReader([]byte{1, 3}),
-		ByteOrder:          binary.BigEndian,
-		changedBitSet:      bitSet,
-		useChangedBitSet:   true,
-		changedBitSetIndex: 0,
+		Buf:       bytes.NewReader([]byte{1, 3}),
+		ByteOrder: binary.BigEndian,
 	}
+	defer s.pushChangedBitSet(bitSet)()
 	if err := Decode(s, &testStruct); err != nil {
 		t.Errorf("Decode failed, got %v", err)
 	}

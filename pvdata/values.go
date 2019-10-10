@@ -1,6 +1,7 @@
 package pvdata
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -95,6 +96,19 @@ func (s *DecoderState) PushReader(r Reader) func() {
 	oldBuf := s.Buf
 	s.Buf = r
 	return func() { s.Buf = oldBuf }
+}
+func (s *DecoderState) pushChangedBitSet(bs PVBitSet) func() {
+	oldCBS := s.changedBitSet
+	oldUCBS := s.useChangedBitSet
+	oldCBSI := s.changedBitSetIndex
+	s.changedBitSet = bs
+	s.useChangedBitSet = true
+	s.changedBitSetIndex = 0
+	return func() {
+		s.changedBitSet = oldCBS
+		s.useChangedBitSet = oldUCBS
+		s.changedBitSetIndex = oldCBSI
+	}
 }
 
 type PVField interface {
@@ -637,6 +651,39 @@ func (v PVStructure) SubField(name string) PVField {
 		}
 	}
 	return nil
+}
+
+type PVStructureDiff struct {
+	ChangedBitSet PVBitSet
+	Value         interface{}
+}
+
+func (v PVStructureDiff) PVEncode(s *EncoderState) error {
+	var buf bytes.Buffer
+	if err := func() error {
+		defer s.PushWriter(&buf)()
+		s.changedBitSet = PVBitSet{Present: []bool{false}}
+		s.useChangedBitSet = true
+		return Encode(s, v.Value)
+	}(); err != nil {
+		return err
+	}
+	v.ChangedBitSet = s.changedBitSet
+	if err := Encode(s, s.changedBitSet); err != nil {
+		return err
+	}
+	if _, err := buf.WriteTo(s.Buf); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *PVStructureDiff) PVDecode(s *DecoderState) error {
+	if err := Decode(s, &v.ChangedBitSet); err != nil {
+		return err
+	}
+	defer s.pushChangedBitSet(v.ChangedBitSet)()
+	return Decode(s, v.Value)
 }
 
 // Union types
