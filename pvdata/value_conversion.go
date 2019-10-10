@@ -185,17 +185,17 @@ func Decode(s *DecoderState, vs ...interface{}) error {
 	return nil
 }
 
-type Fielder interface {
-	Field() (Field, error)
+type FieldDescer interface {
+	FieldDesc() (FieldDesc, error)
 }
 
-func valueToField(v reflect.Value) (Field, error) {
-	if f, ok := v.Interface().(Fielder); ok {
-		return f.Field()
+func valueToField(v reflect.Value) (FieldDesc, error) {
+	if f, ok := v.Interface().(FieldDescer); ok {
+		return f.FieldDesc()
 	}
 	pvf := valueToPVField(v)
-	if f, ok := pvf.(Fielder); ok {
-		return f.Field()
+	if f, ok := pvf.(FieldDescer); ok {
+		return f.FieldDesc()
 	}
-	return Field{}, fmt.Errorf("don't know how to describe %#v", v.Interface())
+	return FieldDesc{}, fmt.Errorf("don't know how to describe %#v", v.Interface())
 }

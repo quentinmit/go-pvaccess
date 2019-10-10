@@ -40,7 +40,7 @@ func (NTScalarArray) TypeID() string {
 
 func (c *Channel) ChannelRPC(ctx context.Context, args pvdata.PVStructure) (interface{}, error) {
 	if strings.HasPrefix(args.ID, "epics:nt/NTURI:1.") {
-		if q, ok := args.SubField("query").(*pvdata.PVStructure); ok {
+		if q, ok := args.Field("query").(*pvdata.PVStructure); ok {
 			args = *q
 		} else {
 			return struct{}{}, pvdata.PVStatus{
@@ -50,12 +50,12 @@ func (c *Channel) ChannelRPC(ctx context.Context, args pvdata.PVStructure) (inte
 		}
 	}
 
-	if args.SubField("help") != nil {
+	if args.Field("help") != nil {
 		// TODO
 	}
 
 	var op pvdata.PVString
-	if v, ok := args.SubField("op").(*pvdata.PVString); ok {
+	if v, ok := args.Field("op").(*pvdata.PVString); ok {
 		op = *v
 	}
 

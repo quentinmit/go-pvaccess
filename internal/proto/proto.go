@@ -245,7 +245,7 @@ type ChannelGetResponseInit struct {
 	RequestID     pvdata.PVInt
 	Subcommand    pvdata.PVByte
 	Status        pvdata.PVStatus `pvaccess:",breakonerror"`
-	PVStructureIF pvdata.Field
+	PVStructureIF pvdata.FieldDesc
 }
 
 type ChannelGetResponse struct {

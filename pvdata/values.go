@@ -186,8 +186,8 @@ func (v *PVBoolean) PVDecode(s *DecoderState) error {
 	*v = (data != 0)
 	return nil
 }
-func (PVBoolean) Field() (Field, error) {
-	return Field{TypeCode: BOOLEAN}, nil
+func (PVBoolean) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: BOOLEAN}, nil
 }
 
 type PVByte int8
@@ -203,8 +203,8 @@ func (v *PVByte) PVDecode(s *DecoderState) error {
 	*v = PVByte(data)
 	return nil
 }
-func (PVByte) Field() (Field, error) {
-	return Field{TypeCode: BYTE}, nil
+func (PVByte) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: BYTE}, nil
 }
 
 type PVUByte uint8
@@ -220,8 +220,8 @@ func (v *PVUByte) PVDecode(s *DecoderState) error {
 	*v = PVUByte(data)
 	return nil
 }
-func (PVUByte) Field() (Field, error) {
-	return Field{TypeCode: UBYTE}, nil
+func (PVUByte) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: UBYTE}, nil
 }
 
 type PVShort int16
@@ -237,8 +237,8 @@ func (v *PVShort) PVDecode(s *DecoderState) error {
 	*v = PVShort(data)
 	return nil
 }
-func (PVShort) Field() (Field, error) {
-	return Field{TypeCode: SHORT}, nil
+func (PVShort) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: SHORT}, nil
 }
 
 type PVUShort uint16
@@ -254,8 +254,8 @@ func (v *PVUShort) PVDecode(s *DecoderState) error {
 	*v = PVUShort(data)
 	return nil
 }
-func (PVUShort) Field() (Field, error) {
-	return Field{TypeCode: USHORT}, nil
+func (PVUShort) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: USHORT}, nil
 }
 
 type PVInt int32
@@ -271,8 +271,8 @@ func (v *PVInt) PVDecode(s *DecoderState) error {
 	*v = PVInt(data)
 	return nil
 }
-func (PVInt) Field() (Field, error) {
-	return Field{TypeCode: INT}, nil
+func (PVInt) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: INT}, nil
 }
 
 type PVUInt uint32
@@ -288,8 +288,8 @@ func (v *PVUInt) PVDecode(s *DecoderState) error {
 	*v = PVUInt(data)
 	return nil
 }
-func (PVUInt) Field() (Field, error) {
-	return Field{TypeCode: UINT}, nil
+func (PVUInt) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: UINT}, nil
 }
 
 type PVLong int64
@@ -305,8 +305,8 @@ func (v *PVLong) PVDecode(s *DecoderState) error {
 	*v = PVLong(data)
 	return nil
 }
-func (PVLong) Field() (Field, error) {
-	return Field{TypeCode: LONG}, nil
+func (PVLong) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: LONG}, nil
 }
 
 type PVULong uint64
@@ -322,8 +322,8 @@ func (v *PVULong) PVDecode(s *DecoderState) error {
 	*v = PVULong(data)
 	return nil
 }
-func (PVULong) Field() (Field, error) {
-	return Field{TypeCode: ULONG}, nil
+func (PVULong) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: ULONG}, nil
 }
 
 type PVFloat float32
@@ -339,8 +339,8 @@ func (v *PVFloat) PVDecode(s *DecoderState) error {
 	*v = PVFloat(math.Float32frombits(data))
 	return nil
 }
-func (PVFloat) Field() (Field, error) {
-	return Field{TypeCode: FLOAT}, nil
+func (PVFloat) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: FLOAT}, nil
 }
 
 type PVDouble float64
@@ -356,8 +356,8 @@ func (v *PVDouble) PVDecode(s *DecoderState) error {
 	*v = PVDouble(math.Float64frombits(data))
 	return nil
 }
-func (PVDouble) Field() (Field, error) {
-	return Field{TypeCode: DOUBLE}, nil
+func (PVDouble) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{TypeCode: DOUBLE}, nil
 }
 
 // Arrays
@@ -446,7 +446,7 @@ func (a PVArray) PVDecode(s *DecoderState) error {
 	}
 	return nil
 }
-func (a PVArray) Field() (Field, error) {
+func (a PVArray) FieldDesc() (FieldDesc, error) {
 	var prototype reflect.Value
 	if a.v.Len() > 0 {
 		prototype = a.v.Index(0).Addr()
@@ -455,7 +455,7 @@ func (a PVArray) Field() (Field, error) {
 	}
 	f, err := valueToField(prototype)
 	if err != nil {
-		return Field{}, err
+		return FieldDesc{}, err
 	}
 	if a.fixed {
 		f.TypeCode |= FIXED_ARRAY
@@ -500,8 +500,8 @@ func (v *PVString) PVDecode(s *DecoderState) error {
 	*v = PVString(bytes)
 	return nil
 }
-func (v PVString) Field() (Field, error) {
-	return Field{
+func (v PVString) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{
 		TypeCode: STRING,
 		Size:     PVSize(len(v)),
 	}, nil
@@ -518,8 +518,8 @@ func (v PVBoundedString) PVEncode(s *EncoderState) error {
 	}
 	return v.PVString.PVEncode(s)
 }
-func (v PVBoundedString) Field() (Field, error) {
-	return Field{
+func (v PVBoundedString) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{
 		TypeCode: BOUNDED_STRING,
 		Size:     v.Bound,
 	}, nil
@@ -611,7 +611,7 @@ func (v PVStructure) String() string {
 	return fmt.Sprintf("%s%+v", v.ID, v.v.Interface())
 }
 
-func (v PVStructure) Field() (Field, error) {
+func (v PVStructure) FieldDesc() (FieldDesc, error) {
 	var fields []StructFieldDesc
 	t := v.v.Type()
 	for i := 0; i < v.v.NumField(); i++ {
@@ -625,21 +625,21 @@ func (v PVStructure) Field() (Field, error) {
 		}
 		f, err := valueToField(v.v.Field(i))
 		if err != nil {
-			return Field{}, fmt.Errorf("calling Field on %s: %v", name, err)
+			return FieldDesc{}, fmt.Errorf("calling Field on %s: %v", name, err)
 		}
 		fields = append(fields, StructFieldDesc{
 			Name:  name,
 			Field: f,
 		})
 	}
-	return Field{
+	return FieldDesc{
 		TypeCode:   STRUCT,
 		StructType: PVString(v.ID),
 		Fields:     fields,
 	}, nil
 }
 
-func (v PVStructure) SubField(name string) PVField {
+func (v PVStructure) Field(name string) PVField {
 	t := v.v.Type()
 	for i := 0; i < v.v.NumField(); i++ {
 		got, _ := parseTag(t.Field(i).Tag.Get("pvaccess"))
@@ -708,7 +708,7 @@ func (v *PVAny) PVEncode(s *EncoderState) error {
 		return nil
 	}
 	if v.Data == nil {
-		return Encode(s, &Field{TypeCode: NULL_TYPE_CODE})
+		return Encode(s, &FieldDesc{TypeCode: NULL_TYPE_CODE})
 	}
 	f, err := valueToField(reflect.ValueOf(&v.Data))
 	if err != nil {
@@ -717,7 +717,7 @@ func (v *PVAny) PVEncode(s *EncoderState) error {
 	return Encode(s, &f, v.Data)
 }
 func (v *PVAny) PVDecode(s *DecoderState) error {
-	var f Field
+	var f FieldDesc
 	if err := Decode(s, &f); err != nil {
 		return err
 	}
@@ -899,10 +899,10 @@ const (
 
 type StructFieldDesc struct {
 	Name  string
-	Field Field
+	Field FieldDesc
 }
 
-type Field struct {
+type FieldDesc struct {
 	// TypeCode represents the real FieldDesc, or NULL_TYPE_CODE
 	// The other special codes will be inferred from HasID, HasTag
 	TypeCode      byte
@@ -939,7 +939,7 @@ const (
 	UNION_ARRAY    = UNION | VARIABLE_ARRAY
 )
 
-func (f *Field) PVEncode(s *EncoderState) error {
+func (f *FieldDesc) PVEncode(s *EncoderState) error {
 	if f.HasID && f.HasTag {
 		if err := s.Buf.WriteByte(FULL_TAGGED_ID_TYPE_CODE); err != nil {
 			return err
@@ -982,7 +982,7 @@ func (f *Field) PVEncode(s *EncoderState) error {
 	return nil
 }
 
-func (f *Field) PVDecode(s *DecoderState) error {
+func (f *FieldDesc) PVDecode(s *DecoderState) error {
 	typeCode, err := s.Buf.ReadByte()
 	if err != nil {
 		return err
@@ -1036,7 +1036,7 @@ func (f *Field) PVDecode(s *DecoderState) error {
 	return nil
 }
 
-func (f Field) createZero() (PVField, error) {
+func (f FieldDesc) createZero() (PVField, error) {
 	switch f.TypeCode {
 	case NULL_TYPE_CODE:
 		return nil, nil
