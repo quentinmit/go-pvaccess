@@ -103,6 +103,11 @@ func TestRoundTrip(t *testing.T) {
 		{NewBitSetWithBits(65), []byte{9, 0, 0, 0, 0, 0, 0, 0, 0, 2}, nil},
 		{NewBitSetWithBits(0, 1, 2, 4), []byte{1, 0x17}, nil},
 		{NewBitSetWithBits(0, 1, 2, 4, 8), []byte{2, 0x17, 0x01}, nil},
+		{NewBitSetWithBits(8, 17, 24, 25, 34, 40, 42, 49, 50), []byte{7, 0, 1, 2, 3, 4, 5, 6}, nil},
+		{NewBitSetWithBits(8, 17, 24, 25, 34, 40, 42, 49, 50, 56, 57, 58), []byte{8, 7, 6, 5, 4, 3, 2, 1, 0}, []byte{8, 0, 1, 2, 3, 4, 5, 6, 7}},
+		{NewBitSetWithBits(8, 17, 24, 25, 34, 40, 42, 49, 50, 56, 57, 58, 67), []byte{9, 7, 6, 5, 4, 3, 2, 1, 0, 8}, []byte{9, 0, 1, 2, 3, 4, 5, 6, 7, 8}},
+		{NewBitSetWithBits(8, 17, 24, 25, 34, 40, 42, 49, 50, 56, 57, 58, 67, 72, 75), []byte{10, 7, 6, 5, 4, 3, 2, 1, 0, 8, 9}, []byte{10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+		{NewBitSetWithBits(8, 17, 24, 25, 34, 40, 42, 49, 50, 56, 57, 58, 67, 72, 75, 81, 83), []byte{11, 7, 6, 5, 4, 3, 2, 1, 0, 8, 9, 10}, []byte{11, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}},
 	}
 	for _, test := range tests {
 		name := fmt.Sprintf("%T/%#v", test.in, test.in)
