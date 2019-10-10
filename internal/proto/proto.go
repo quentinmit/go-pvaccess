@@ -231,13 +231,14 @@ func (r ChannelGetRequest) PVEncode(s *pvdata.EncoderState) error {
 	}
 	return nil
 }
-func (r *ChannelGetResponse) PVDecode(s *pvdata.DecoderState) error {
+func (r *ChannelGetRequest) PVDecode(s *pvdata.DecoderState) error {
 	if err := pvdata.Decode(s, &r.ServerChannelID, &r.RequestID, &r.Subcommand); err != nil {
 		return err
 	}
 	if r.Subcommand&CHANNEL_GET_INIT == CHANNEL_GET_INIT {
 		return pvdata.Decode(s, &r.PVRequest)
 	}
+	return nil
 }
 
 type ChannelGetResponseInit struct {
@@ -248,11 +249,12 @@ type ChannelGetResponseInit struct {
 }
 
 type ChannelGetResponse struct {
-	RequestID     pvdata.PVInt
-	Subcommand    pvdata.PVByte
-	Status        pvdata.PVStatus `pvaccess:",breakonerror"`
-	ChangedBitSet pvdata.PVBitSet
-	// ChangedBitSet and the PVStructureIF fron the ChannelGetResponse need to be used to encode/decode a structure.
+	RequestID  pvdata.PVInt
+	Subcommand pvdata.PVByte
+	Status     pvdata.PVStatus `pvaccess:",breakonerror"`
+	// Value is the partial structure in the response.
+	// On decode, Value.Value needs to be prepopulated with the struct to decode into.
+	Value pvdata.PVStructureDiff
 }
 
 // channelGetRequest
