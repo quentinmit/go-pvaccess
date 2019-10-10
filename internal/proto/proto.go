@@ -205,8 +205,56 @@ type CreateChannelResponse struct {
 
 // destroyChannelRequest
 // destroyChannelResponse
-// channelGetRequestInit
-// channelGetResponseInit
+
+// Channel Get
+
+const (
+	CHANNEL_GET_INIT    = 0x08
+	CHANNEL_GET_DESTROY = 0x10
+	// 0x40 means "get" but is optional
+)
+
+type ChannelGetRequest struct {
+	ServerChannelID pvdata.PVInt
+	RequestID       pvdata.PVInt
+	Subcommand      pvdata.PVByte
+	// PVRequest is the requested fields, only present if Subcommand is CHANNEL_GET_INIT.
+	PVRequest pvdata.PVAny
+}
+
+func (r ChannelGetRequest) PVEncode(s *pvdata.EncoderState) error {
+	if err := pvdata.Encode(s, &r.ServerChannelID, &r.RequestID, &r.Subcommand); err != nil {
+		return err
+	}
+	if r.Subcommand&CHANNEL_GET_INIT == CHANNEL_GET_INIT {
+		return pvdata.Encode(s, &r.PVRequest)
+	}
+	return nil
+}
+func (r *ChannelGetResponse) PVDecode(s *pvdata.DecoderState) error {
+	if err := pvdata.Decode(s, &r.ServerChannelID, &r.RequestID, &r.Subcommand); err != nil {
+		return err
+	}
+	if r.Subcommand&CHANNEL_GET_INIT == CHANNEL_GET_INIT {
+		return pvdata.Decode(s, &r.PVRequest)
+	}
+}
+
+type ChannelGetResponseInit struct {
+	RequestID     pvdata.PVInt
+	Subcommand    pvdata.PVByte
+	Status        pvdata.PVStatus `pvaccess:",breakonerror"`
+	PVStructureIF pvdata.Field
+}
+
+type ChannelGetResponse struct {
+	RequestID     pvdata.PVInt
+	Subcommand    pvdata.PVByte
+	Status        pvdata.PVStatus `pvaccess:",breakonerror"`
+	ChangedBitSet pvdata.PVBitSet
+	// ChangedBitSet and the PVStructureIF fron the ChannelGetResponse need to be used to encode/decode a structure.
+}
+
 // channelGetRequest
 // channelGetResponse
 // channelPutRequestInit

@@ -658,7 +658,103 @@ func (v *PVAny) PVDecode(s *DecoderState) error {
 }
 
 // BitSet type
-// TODO
+type PVBitSet struct {
+	Present []bool
+	// TODO: Consider using github.com/willf/bitset.BitSet
+}
+
+func NewBitSetWithBits(bits ...int) PVBitSet {
+	max := -1
+	for _, b := range bits {
+		if b > max {
+			max = b
+		}
+	}
+	bs := PVBitSet{
+		Present: make([]bool, max+1),
+	}
+	for _, b := range bits {
+		bs.Present[b] = true
+	}
+	return bs
+}
+
+func (bs PVBitSet) PVEncode(s *EncoderState) error {
+	size := PVSize((len(bs.Present) + 7) / 8)
+	if err := Encode(s, &size); err != nil {
+		return err
+	}
+	for i := uint(0); i < uint(len(bs.Present)); i += 64 {
+		// 64 bits are packed in a long, remainder are packed one at a time in a byte.
+		if i+64 <= uint(len(bs.Present)) {
+			var out uint64
+			for j := uint(0); j < 64; j++ {
+				if bs.Present[i+j] {
+					out |= (1 << j)
+				}
+			}
+			if err := Encode(s, &out); err != nil {
+				return err
+			}
+		} else {
+			for j := i; j < uint(len(bs.Present)); j += 8 {
+				var out byte
+				for k := uint(0); k < 8 && (j+k) < uint(len(bs.Present)); k++ {
+					if bs.Present[j+k] {
+						out |= (1 << k)
+					}
+				}
+				if err := Encode(s, &out); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (bs *PVBitSet) PVDecode(s *DecoderState) error {
+	bs.Present = nil
+
+	var size PVSize
+	if err := Decode(s, &size); err != nil {
+		return err
+	}
+
+	maxBit := -1
+
+	i := 0
+	for ; i+7 < int(size); i += 8 {
+		var in uint64
+		if err := Decode(s, &in); err != nil {
+			return err
+		}
+		for j := 0; j < 64; j++ {
+			val := (in & 1) == 1
+			if val {
+				maxBit = i*8 + j
+			}
+			bs.Present = append(bs.Present, val)
+			in >>= 1
+		}
+	}
+	for ; i < int(size); i++ {
+		var in byte
+		if err := Decode(s, &in); err != nil {
+			return err
+		}
+		for j := 0; j < 8; j++ {
+			val := (in & 1) == 1
+			if val {
+				maxBit = i*8 + j
+			}
+			bs.Present = append(bs.Present, val)
+			in >>= 1
+		}
+	}
+	bs.Present = bs.Present[:maxBit+1]
+	return nil
+}
 
 // Status type
 
