@@ -174,15 +174,15 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
-func TestStructureBitSet(t *testing.T) {
+func TestStructureBitSetDecode(t *testing.T) {
 	type structT struct {
 		One, Two byte
-		Array    []int
+		Array    []byte
 		Inner    struct {
 			Three, Four byte
 		}
 	}
-	testStruct := structT{11, 12, []int{32}, struct{ Three, Four byte }{13, 14}}
+	testStruct := structT{11, 12, []byte{32}, struct{ Three, Four byte }{13, 14}}
 	bitSet := NewBitSetWithBits(1, 5)
 	s := &DecoderState{
 		Buf:                bytes.NewReader([]byte{1, 3}),
@@ -194,7 +194,38 @@ func TestStructureBitSet(t *testing.T) {
 	if err := Decode(s, &testStruct); err != nil {
 		t.Errorf("Decode failed, got %v", err)
 	}
-	if diff := cmp.Diff(testStruct, structT{1, 12, []int{32}, struct{ Three, Four byte }{3, 14}}); diff != "" {
+	if diff := cmp.Diff(testStruct, structT{1, 12, []byte{32}, struct{ Three, Four byte }{3, 14}}); diff != "" {
 		t.Errorf("decode failed. got(-)/want(+)\n%s", diff)
 	}
+}
+
+func TestStructureBitSetEncode(t *testing.T) {
+	type structT struct {
+		One, Two byte
+		Array    []byte
+		Inner    struct {
+			Three, Four byte
+		}
+	}
+	testStruct := structT{11, 12, []byte{32}, struct{ Three, Four byte }{13, 14}}
+	//testStruct2 := structT{1, 12, []byte{32}, struct{ Three, Four byte }{3, 14}}
+	var buf bytes.Buffer
+	s := &EncoderState{
+		Buf:       &buf,
+		ByteOrder: binary.BigEndian,
+		changedBitSet: PVBitSet{
+			Present: []bool{false},
+		},
+		useChangedBitSet: true,
+	}
+	if err := Encode(s, &testStruct); err != nil {
+		t.Errorf("Encode failed, got %v", err)
+	}
+	if diff := cmp.Diff(buf.Bytes(), []byte{11, 12, 1, 32, 13, 14}); diff != "" {
+		t.Errorf("encode failed. got(-)/want(+)\n%s", diff)
+	}
+	if diff := cmp.Diff(s.changedBitSet, NewBitSetWithBits(1, 2, 3, 4, 5, 6)); diff != "" {
+		t.Errorf("wrong changed bitset. got(-)/want(+)\n%s", diff)
+	}
+	// TODO: Encode again with testStruct2 and check that diff is computed correctly.
 }

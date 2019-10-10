@@ -28,6 +28,9 @@ type Writer interface {
 type EncoderState struct {
 	Buf       Writer
 	ByteOrder binary.ByteOrder
+
+	changedBitSet    PVBitSet
+	useChangedBitSet bool
 }
 
 func (s *EncoderState) WriteUint16(v uint16) error {
@@ -360,6 +363,11 @@ func NewPVFixedArray(slicePtr interface{}) PVArray {
 }
 
 func (a PVArray) PVEncode(s *EncoderState) error {
+	if s.useChangedBitSet {
+		// Arrays do not contribute to the bitset.
+		defer func() { s.useChangedBitSet = true }()
+		s.useChangedBitSet = false
+	}
 	if !a.fixed {
 		if a.alwaysShort {
 			if err := PVUShort(a.v.Len()).PVEncode(s); err != nil {
@@ -538,6 +546,10 @@ func (v PVStructure) PVEncode(s *EncoderState) error {
 		if pvf == nil {
 			return fmt.Errorf("don't know how to encode %#v", item.Interface())
 		}
+		if s.useChangedBitSet {
+			// TODO: Check if the field has actually changed.
+			s.changedBitSet.Present = append(s.changedBitSet.Present, true)
+		}
 		if err := pvf.PVEncode(s); err != nil {
 			return err
 		}
@@ -564,11 +576,11 @@ func (v PVStructure) PVDecode(s *DecoderState) error {
 			s.changedBitSetIndex++
 		}
 		pvf := valueToPVField(item, tagsToOptions(tags)...)
+		if pvf == nil {
+			return fmt.Errorf("don't know how to encode %#v", item.Interface())
+		}
 		_, isStruct := pvf.(PVStructure)
 		if fullStruct || isStruct || s.changedBitSet.Get(s.changedBitSetIndex) {
-			if pvf == nil {
-				return fmt.Errorf("don't know how to encode %#v", item.Interface())
-			}
 			if err := pvf.PVDecode(s); err != nil {
 				return err
 			}
