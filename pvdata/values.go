@@ -684,11 +684,11 @@ func (bs PVBitSet) PVEncode(s *EncoderState) error {
 	if err := Encode(s, &size); err != nil {
 		return err
 	}
-	for i := uint(0); i < uint(len(bs.Present)); i += 64 {
+	for i := uint(0); i < uint(size*8); i += 64 {
 		// 64 bits are packed in a long, remainder are packed one at a time in a byte.
-		if i+64 <= uint(len(bs.Present)) {
+		if i+64 <= uint(size*8) {
 			var out uint64
-			for j := uint(0); j < 64; j++ {
+			for j := uint(0); j < 64 && (i+j) < uint(len(bs.Present)); j++ {
 				if bs.Present[i+j] {
 					out |= (1 << j)
 				}

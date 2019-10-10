@@ -90,15 +90,15 @@ func TestRoundTrip(t *testing.T) {
 			A bool
 			B []bool `pvaccess:",short"`
 		}{true, []bool{true}}, []byte{0x01, 0x00, 0x01, 0x01}, []byte{0x01, 0x01, 0x00, 0x01}},
-		{PVBitSet{[]bool{}}, []byte{0}, nil},
+		{PVBitSet{nil}, []byte{0}, nil},
 		{PVBitSet{[]bool{true}}, []byte{1, 1}, nil},
 		{PVBitSet{[]bool{false, true}}, []byte{1, 2}, nil},
 		{NewBitSetWithBits(7), []byte{1, 0x80}, nil},
 		{NewBitSetWithBits(8), []byte{2, 0, 1}, nil},
 		{NewBitSetWithBits(15), []byte{2, 0, 0x80}, nil},
 		{NewBitSetWithBits(55), []byte{7, 0, 0, 0, 0, 0, 0, 0x80}, nil},
-		{NewBitSetWithBits(56), []byte{8, 0, 0, 0, 0, 0, 0, 0, 1}, nil},
-		{NewBitSetWithBits(63), []byte{8, 0, 0, 0, 0, 0, 0, 0, 0x80}, nil},
+		{NewBitSetWithBits(56), []byte{8, 1, 0, 0, 0, 0, 0, 0, 0}, []byte{8, 0, 0, 0, 0, 0, 0, 0, 1}},
+		{NewBitSetWithBits(63), []byte{8, 0x80, 0, 0, 0, 0, 0, 0, 0}, []byte{8, 0, 0, 0, 0, 0, 0, 0, 0x80}},
 		{NewBitSetWithBits(64), []byte{9, 0, 0, 0, 0, 0, 0, 0, 0, 1}, nil},
 		{NewBitSetWithBits(65), []byte{9, 0, 0, 0, 0, 0, 0, 0, 0, 2}, nil},
 		{NewBitSetWithBits(0, 1, 2, 4), []byte{1, 0x17}, nil},
