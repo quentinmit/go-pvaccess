@@ -173,3 +173,28 @@ func TestRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestStructureBitSet(t *testing.T) {
+	type structT struct {
+		One, Two byte
+		Array    []int
+		Inner    struct {
+			Three, Four byte
+		}
+	}
+	testStruct := structT{11, 12, []int{32}, struct{ Three, Four byte }{13, 14}}
+	bitSet := NewBitSetWithBits(1, 5)
+	s := &DecoderState{
+		Buf:                bytes.NewReader([]byte{1, 3}),
+		ByteOrder:          binary.BigEndian,
+		changedBitSet:      bitSet,
+		useChangedBitSet:   true,
+		changedBitSetIndex: 0,
+	}
+	if err := Decode(s, &testStruct); err != nil {
+		t.Errorf("Decode failed, got %v", err)
+	}
+	if diff := cmp.Diff(testStruct, structT{1, 12, []int{32}, struct{ Three, Four byte }{3, 14}}); diff != "" {
+		t.Errorf("decode failed. got(-)/want(+)\n%s", diff)
+	}
+}

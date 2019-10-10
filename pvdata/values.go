@@ -61,6 +61,10 @@ type Reader interface {
 type DecoderState struct {
 	Buf       Reader
 	ByteOrder binary.ByteOrder
+
+	changedBitSet      PVBitSet
+	useChangedBitSet   bool
+	changedBitSetIndex int
 }
 
 func (s *DecoderState) ReadUint16() (uint16, error) {
@@ -383,6 +387,11 @@ func (a PVArray) PVDecode(s *DecoderState) error {
 	if !a.v.IsValid() {
 		return errors.New("zero PVArray is not usable")
 	}
+	if s.useChangedBitSet {
+		// Arrays do not contribute to the bitset.
+		defer func() { s.useChangedBitSet = true }()
+		s.useChangedBitSet = false
+	}
 	var size PVSize
 	if a.fixed {
 		size = PVSize(a.v.Len())
@@ -497,9 +506,8 @@ func (v PVBoundedString) Field() (Field, error) {
 // Structure types
 
 type PVStructure struct {
-	ID           string
-	decodeFields []string
-	v            reflect.Value
+	ID string
+	v  reflect.Value
 }
 
 // NewPVStructure creates a PVStructure with a given type ID from a pointer to a struct type.
@@ -545,16 +553,25 @@ func (v PVStructure) PVDecode(s *DecoderState) error {
 	if !v.v.IsValid() {
 		return errors.New("zero PVStructure is not usable")
 	}
+	// If the struct's bit itself is set, all the fields must be serialized
+	// TODO: What about fields of child structs? Is this recursive?
+	fullStruct := !s.useChangedBitSet || s.changedBitSet.Get(s.changedBitSetIndex)
 	t := v.v.Type()
 	for i := 0; i < v.v.NumField(); i++ {
 		item := v.v.Field(i).Addr()
 		_, tags := parseTag(t.Field(i).Tag.Get("pvaccess"))
-		pvf := valueToPVField(item, tagsToOptions(tags)...)
-		if pvf == nil {
-			return fmt.Errorf("don't know how to encode %#v", item.Interface())
+		if s.useChangedBitSet {
+			s.changedBitSetIndex++
 		}
-		if err := pvf.PVDecode(s); err != nil {
-			return err
+		pvf := valueToPVField(item, tagsToOptions(tags)...)
+		_, isStruct := pvf.(PVStructure)
+		if fullStruct || isStruct || s.changedBitSet.Get(s.changedBitSetIndex) {
+			if pvf == nil {
+				return fmt.Errorf("don't know how to encode %#v", item.Interface())
+			}
+			if err := pvf.PVDecode(s); err != nil {
+				return err
+			}
 		}
 		if _, ok := tags["breakonerror"]; ok {
 			if item.Interface().(*PVStatus).Type > PVStatus_WARNING {
@@ -677,6 +694,13 @@ func NewBitSetWithBits(bits ...int) PVBitSet {
 		bs.Present[b] = true
 	}
 	return bs
+}
+
+func (bs PVBitSet) Get(bit int) bool {
+	if bit < len(bs.Present) {
+		return bs.Present[bit]
+	}
+	return false
 }
 
 func (bs PVBitSet) PVEncode(s *EncoderState) error {
