@@ -206,6 +206,15 @@ type CreateChannelResponse struct {
 // destroyChannelRequest
 // destroyChannelResponse
 
+// Channel *
+
+// ChannelResponseError is the common struct used by all channel operations to report an error.
+type ChannelResponseError struct {
+	RequestID  pvdata.PVInt
+	Subcommand pvdata.PVByte
+	Status     pvdata.PVStatus
+}
+
 // Channel Get
 
 const (

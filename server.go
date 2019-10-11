@@ -268,9 +268,6 @@ func (c *serverConn) handleCreateChannelRequest(ctx context.Context, msg *connec
 	return c.SendApp(ctx, proto.APP_CHANNEL_CREATE, &resp)
 }
 
-// asyncOperation is a sentinel error to halt the current response in favor of a later asynchronous reply.
-var asyncOperation = errors.New("async operation started")
-
 func errorToStatus(err error) pvdata.PVStatus {
 	if err == nil {
 		return pvdata.PVStatus{}
@@ -284,40 +281,163 @@ func errorToStatus(err error) pvdata.PVStatus {
 	}
 }
 
+func (c *serverConn) getChannel(ctx context.Context, id pvdata.PVInt) (Channel, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	channel := c.channels[id]
+	if channel == nil {
+		return nil, fmt.Errorf("unknown channel ID %x", id)
+	}
+	ctxlog.L(ctx).Debugf("channel = %#v", channel)
+	return channel, nil
+}
+
+func (c *serverConn) handleChannelGet(ctx context.Context, msg *connection.Message) error {
+	var req proto.ChannelGetRequest
+	if err := msg.Decode(&req); err != nil {
+		return err
+	}
+	ctxlog.L(ctx).Debugf("CHANNEL_GET(%#v)", req)
+	c.g.Go(func() (err error) {
+		defer func() {
+			if err != nil {
+				ctxlog.L(ctx).Warnf("Channel Get failed: %v", err)
+				err = c.SendApp(ctx, proto.APP_CHANNEL_RPC, &proto.ChannelResponseError{
+					RequestID:  req.RequestID,
+					Subcommand: req.Subcommand,
+					Status:     errorToStatus(err),
+				})
+			}
+		}()
+		channel, err := c.getChannel(ctx, req.ServerChannelID)
+		if err != nil {
+			return err
+		}
+		ctx = ctxlog.WithFields(ctx, ctxlog.Fields{
+			"channel":    channel.Name(),
+			"channel_id": req.ServerChannelID,
+			"request_id": req.RequestID,
+		})
+		switch req.Subcommand {
+		case proto.CHANNEL_GET_INIT:
+			args, ok := req.PVRequest.Data.(pvdata.PVStructure)
+			if !ok {
+				return fmt.Errorf("Get arguments were of type %T, expected PVStructure", req.PVRequest.Data)
+			}
+			ctxlog.L(ctx).Printf("received request to init channel get with body %#v", args)
+			// TODO: Parse args to select output data
+			var geter ChannelGeter
+			if getc, ok := channel.(ChannelGetCreator); ok {
+				var err error
+				geter, err = getc.CreateChannelGet(ctx, args)
+				if err != nil {
+					return err
+				}
+			} else if g, ok := channel.(ChannelGeter); ok {
+				geter = g
+			} else {
+				return fmt.Errorf("channel %q (ID %x) does not support Get", channel.Name(), req.ServerChannelID)
+			}
+			if err := c.addRequest(req.RequestID, &request{doer: geter, status: READY}); err != nil {
+				return err
+			}
+			// TODO: Optional interface to get field description without having to do expensive get
+			out, err := geter.ChannelGet(ctx)
+			if err != nil {
+				return err
+			}
+			pvs, err := pvdata.NewPVStructure(out)
+			if err != nil {
+				return err
+			}
+			fd, err := pvs.FieldDesc()
+			if err != nil {
+				return err
+			}
+			return c.SendApp(ctx, proto.APP_CHANNEL_GET, &proto.ChannelGetResponseInit{
+				RequestID:     req.RequestID,
+				Subcommand:    req.Subcommand,
+				PVStructureIF: fd,
+			})
+		default:
+			ctxlog.L(ctx).Printf("received request to execute channel get")
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			r := c.requests[req.RequestID]
+			if r.status != READY {
+				return pvdata.PVStatus{
+					Type:    pvdata.PVStatus_ERROR,
+					Message: pvdata.PVString("request not READY"),
+				}
+			}
+			geter, ok := r.doer.(ChannelGeter)
+			if !ok {
+				return errors.New("request not for get")
+			}
+			ctx, cancel := context.WithCancel(ctx)
+			r.status = REQUEST_IN_PROGRESS
+			r.cancel = cancel
+			c.g.Go(func() error {
+				respData, err := geter.ChannelGet(ctx)
+				resp := &proto.ChannelGetResponse{
+					RequestID:  req.RequestID,
+					Subcommand: req.Subcommand,
+					Status:     errorToStatus(err),
+					Value: pvdata.PVStructureDiff{
+						Value: respData,
+					},
+				}
+				if err := c.SendApp(ctx, proto.APP_CHANNEL_GET, resp); err != nil {
+					ctxlog.L(ctx).Errorf("sending get response: %v", err)
+				}
+
+				c.mu.Lock()
+				defer c.mu.Unlock()
+				r.status = READY
+				if req.Subcommand&proto.CHANNEL_GET_DESTROY == proto.CHANNEL_GET_DESTROY {
+					r.status = DESTROYED
+				}
+				return nil
+			})
+		}
+		return nil
+	})
+	return nil
+}
+
 func (c *serverConn) handleChannelRPC(ctx context.Context, msg *connection.Message) error {
 	var req proto.ChannelRPCRequest
 	if err := msg.Decode(&req); err != nil {
 		return err
 	}
 	ctxlog.L(ctx).Debugf("CHANNEL_RPC(%#v)", req)
+	c.g.Go(func() error {
+		return c.handleChannelRPCBody(ctx, req)
+	})
+	return nil
+}
+
+func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.ChannelRPCRequest) (err error) {
 	resp := &proto.ChannelRPCResponseInit{
 		RequestID:  req.RequestID,
 		Subcommand: req.Subcommand,
 	}
-	err := c.handleChannelRPCBody(ctx, req)
-	if err == asyncOperation {
-		return nil
-	}
+	defer func() {
+		if err != nil {
+			ctxlog.L(ctx).Warnf("Channel RPC failed: %v", err)
+			resp.Status = errorToStatus(err)
+			err = c.SendApp(ctx, proto.APP_CHANNEL_RPC, resp)
+		}
+	}()
+	channel, err := c.getChannel(ctx, req.ServerChannelID)
 	if err != nil {
-		ctxlog.L(ctx).Warnf("Channel RPC failed: %v", err)
-	}
-	resp.Status = errorToStatus(err)
-	return c.SendApp(ctx, proto.APP_CHANNEL_RPC, resp)
-}
-
-func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.ChannelRPCRequest) error {
-	c.mu.Lock()
-	channel := c.channels[req.ServerChannelID]
-	c.mu.Unlock()
-	if channel == nil {
-		return fmt.Errorf("unknown channel ID %x", req.ServerChannelID)
+		return err
 	}
 	ctx = ctxlog.WithFields(ctx, ctxlog.Fields{
 		"channel":    channel.Name(),
 		"channel_id": req.ServerChannelID,
 		"request_id": req.RequestID,
 	})
-	ctxlog.L(ctx).Debugf("channel = %#v", channel)
 	args, ok := req.PVRequest.Data.(pvdata.PVStructure)
 	if !ok {
 		return fmt.Errorf("RPC arguments were of type %T, expected PVStructure", req.PVRequest.Data)
@@ -340,7 +460,7 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 		if err := c.addRequest(req.RequestID, &request{doer: rpcer, status: READY}); err != nil {
 			return err
 		}
-		return nil
+		return c.SendApp(ctx, proto.APP_CHANNEL_RPC, resp)
 	default:
 		ctxlog.L(ctx).Printf("received request to execute channel RPC with body %v", args)
 		c.mu.Lock()
@@ -379,7 +499,7 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 			}
 			return nil
 		})
-		return asyncOperation
+		return nil
 	}
 }
 

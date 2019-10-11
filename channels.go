@@ -16,6 +16,8 @@ type ChannelProvider = types.ChannelProvider
 type ChannelLister = types.ChannelLister
 type ChannelFinder = types.ChannelFinder
 type Channel = types.Channel
+type ChannelGetCreator = types.ChannelGetCreator
+type ChannelGeter = types.ChannelGeter
 type ChannelRPCCreator = types.ChannelRPCCreator
 type ChannelRPCer = types.ChannelRPCer
 

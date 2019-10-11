@@ -33,6 +33,14 @@ type Channel interface {
 	Name() string
 }
 
+type ChannelGetCreator interface {
+	CreateChannelGet(ctx context.Context, req pvdata.PVStructure) (ChannelGeter, error)
+}
+
+type ChannelGeter interface {
+	ChannelGet(ctx context.Context) (response interface{}, err error)
+}
+
 type ChannelRPCCreator interface {
 	CreateChannelRPC(ctx context.Context, req pvdata.PVStructure) (ChannelRPCer, error)
 }

@@ -532,18 +532,24 @@ type PVStructure struct {
 	v  reflect.Value
 }
 
-// NewPVStructure creates a PVStructure with a given type ID from a pointer to a struct type.
-func NewPVStructure(data interface{}, id string) PVStructure {
+// NewPVStructure creates a PVStructure from a pointer to a struct type or a PVStructure.
+func NewPVStructure(data interface{}) (PVStructure, error) {
+	if data, ok := data.(PVStructure); ok {
+		return data, nil
+	}
+	if data, ok := data.(*PVStructure); ok {
+		return *data, nil
+	}
 	v := reflect.ValueOf(data)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
-		panic("data was not a struct")
+		return PVStructure{}, errors.New("data was not a struct")
 	}
 	return PVStructure{
 		v: v,
-	}
+	}, nil
 }
 
 // TODO: Support bitfields for partial pack/unpack
