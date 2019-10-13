@@ -11,6 +11,7 @@ import (
 
 	pvaccess "github.com/quentinmit/go-pvaccess"
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
+	"github.com/quentinmit/go-pvaccess/pvdata"
 )
 
 var (
@@ -40,7 +41,8 @@ func main() {
 	s.DisableSearch = *disableSearch
 
 	c := &pvaccess.SimpleChannel{ChannelName: "gopvtest"}
-	c.Set(1)
+	value := pvdata.PVLong(1)
+	c.Set(&value)
 	s.AddChannelProvider(c)
 
 	s.ListenAndServe(ctx)

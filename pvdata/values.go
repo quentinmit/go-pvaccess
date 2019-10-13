@@ -675,7 +675,7 @@ func (v PVStructureDiff) PVEncode(s *EncoderState) error {
 		return err
 	}
 	v.ChangedBitSet = s.changedBitSet
-	if err := Encode(s, s.changedBitSet); err != nil {
+	if err := Encode(s, &s.changedBitSet); err != nil {
 		return err
 	}
 	if _, err := buf.WriteTo(s.Buf); err != nil {

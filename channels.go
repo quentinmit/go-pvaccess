@@ -2,7 +2,6 @@ package pvaccess
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 
@@ -93,7 +92,18 @@ func (c *SimpleChannel) ChannelList(ctx context.Context) ([]string, error) {
 	return []string{c.Name()}, nil
 }
 
+type bareScalar struct {
+	Value interface{} `pvaccess:"value"`
+}
+
+func (bareScalar) TypeID() string {
+	return "epics:nt/NTScalar:1.0"
+}
+
 func (c *SimpleChannel) ChannelGet(ctx context.Context) (interface{}, error) {
-	// TODO: Implement.
-	return nil, errors.New("not implemented")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return &bareScalar{
+		Value: c.value,
+	}, nil
 }

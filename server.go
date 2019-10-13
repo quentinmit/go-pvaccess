@@ -227,6 +227,7 @@ func (c *serverConn) handleServerOnePacket(ctx context.Context) error {
 var serverDispatch = map[pvdata.PVByte]func(c *serverConn, ctx context.Context, msg *connection.Message) error{
 	proto.APP_CONNECTION_VALIDATION: (*serverConn).handleConnectionValidation,
 	proto.APP_CHANNEL_CREATE:        (*serverConn).handleCreateChannelRequest,
+	proto.APP_CHANNEL_GET:           (*serverConn).handleChannelGet,
 	proto.APP_CHANNEL_RPC:           (*serverConn).handleChannelRPC,
 	proto.APP_SEARCH_REQUEST:        (*serverConn).handleSearchRequest,
 }
@@ -324,7 +325,7 @@ func (c *serverConn) handleChannelGet(ctx context.Context, msg *connection.Messa
 			if !ok {
 				return fmt.Errorf("Get arguments were of type %T, expected PVStructure", req.PVRequest.Data)
 			}
-			ctxlog.L(ctx).Printf("received request to init channel get with body %#v", args)
+			ctxlog.L(ctx).Printf("received request to init channel get with body %v", args)
 			// TODO: Parse args to select output data
 			var geter ChannelGeter
 			if getc, ok := channel.(ChannelGetCreator); ok {

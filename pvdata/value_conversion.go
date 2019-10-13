@@ -103,6 +103,9 @@ func valueToPVField(v reflect.Value, options ...option) PVField {
 			return pvf
 		}
 	}
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
 	if v.CanInterface() {
 		i := v.Interface()
 		if i, ok := i.(PVField); ok {
@@ -110,6 +113,9 @@ func valueToPVField(v reflect.Value, options ...option) PVField {
 		}
 		if v.Kind() != reflect.Ptr && v.CanAddr() {
 			i = v.Addr().Interface()
+		}
+		if i, ok := i.(PVField); ok {
+			return i
 		}
 		switch i := i.(type) {
 		case *PVField:
