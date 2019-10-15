@@ -55,6 +55,18 @@ func (conn *serverConn) createChannel(ctx context.Context, channelID pvdata.PVIn
 	return channel, nil
 }
 
+func (c *serverConn) destroyChannel(id pvdata.PVInt) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// TODO: Cancel outstanding requests?
+	// TODO: Wait for outstanding requests to finish?
+	if _, ok := c.channels[id]; ok {
+		delete(c.channels, id)
+		return nil
+	}
+	return fmt.Errorf("unknown channel %d", id)
+}
+
 type SimpleChannel struct {
 	ChannelName string
 

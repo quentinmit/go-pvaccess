@@ -157,9 +157,7 @@ func (c *serverConn) addRequest(id pvdata.PVInt, r *request) error {
 	return nil
 }
 
-func (c *serverConn) cancelRequest(id pvdata.PVInt) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *serverConn) cancelRequestLocked(id pvdata.PVInt) error {
 	if existing, ok := c.requests[id]; ok {
 		if existing.status < CANCELLED {
 			existing.status = CANCELLED
@@ -173,9 +171,7 @@ func (c *serverConn) cancelRequest(id pvdata.PVInt) error {
 	return fmt.Errorf("unknown request %d", id)
 }
 
-func (c *serverConn) destroyRequest(id pvdata.PVInt) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *serverConn) destroyRequestLocked(id pvdata.PVInt) error {
 	if existing, ok := c.requests[id]; ok {
 		if existing.status < DESTROYED {
 			existing.status = DESTROYED
@@ -260,6 +256,7 @@ func (c *serverConn) handleServerOnePacket(ctx context.Context) error {
 var serverDispatch = map[pvdata.PVByte]func(c *serverConn, ctx context.Context, msg *connection.Message) error{
 	proto.APP_CONNECTION_VALIDATION: (*serverConn).handleConnectionValidation,
 	proto.APP_CHANNEL_CREATE:        (*serverConn).handleCreateChannelRequest,
+	proto.APP_CHANNEL_DESTROY:       (*serverConn).handleChannelDestroy,
 	proto.APP_CHANNEL_GET:           (*serverConn).handleChannelGet,
 	proto.APP_CHANNEL_RPC:           (*serverConn).handleChannelRPC,
 	proto.APP_REQUEST_CANCEL:        (*serverConn).handleRequestCancelDestroy,
@@ -302,6 +299,24 @@ func (c *serverConn) handleCreateChannelRequest(ctx context.Context, msg *connec
 		resp.Status.Message = "wrong number of channels"
 	}
 	return c.SendApp(ctx, proto.APP_CHANNEL_CREATE, &resp)
+}
+
+func (c *serverConn) handleChannelDestroy(ctx context.Context, msg *connection.Message) error {
+	var req proto.DestroyChannel
+	if err := msg.Decode(&req); err != nil {
+		return err
+	}
+	ctxlog.L(ctx).Infof("CHANNEL_DESTROY(%d, %d)", req.ServerChannelID, req.ClientChannelID)
+	if req.ServerChannelID != req.ClientChannelID {
+		// TODO: Spec says we "MUST respond with an error status", but response struct doesn't contain a status code...
+		// Returning nil will just cause the client to time out.
+		return nil
+	}
+	if err := c.destroyChannel(req.ServerChannelID); err != nil {
+		ctxlog.L(ctx).Errorf("destroying channel: %v", err)
+	}
+	// Response is just a copy of the request.
+	return c.SendApp(ctx, proto.APP_CHANNEL_DESTROY, &req)
 }
 
 func errorToStatus(err error) pvdata.PVStatus {
@@ -432,6 +447,7 @@ func (c *serverConn) handleChannelGet(ctx context.Context, msg *connection.Messa
 				r.status = READY
 				if req.Subcommand&proto.CHANNEL_GET_DESTROY == proto.CHANNEL_GET_DESTROY {
 					r.status = DESTROYED
+					delete(c.requests, req.RequestID)
 				}
 				return nil
 			})
@@ -532,6 +548,7 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 			r.status = READY
 			if req.Subcommand&proto.CHANNEL_RPC_DESTROY == proto.CHANNEL_RPC_DESTROY {
 				r.status = DESTROYED
+				delete(c.requests, req.RequestID)
 			}
 			return nil
 		})
@@ -544,15 +561,19 @@ func (c *serverConn) handleRequestCancelDestroy(ctx context.Context, msg *connec
 	if err := msg.Decode(&req); err != nil {
 		return err
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if msg.Header.MessageCommand == proto.APP_REQUEST_DESTROY {
 		ctxlog.L(ctx).Infof("REQUEST_DESTROY(%d, %d)", req.ServerChannelID, req.RequestID)
-		if err := c.destroyRequest(req.RequestID); err != nil {
+		if err := c.destroyRequestLocked(req.RequestID); err != nil {
 			ctxlog.L(ctx).Errorf("destroying request %d: %v", req.RequestID, err)
 		}
 		return nil
 	}
+
 	ctxlog.L(ctx).Infof("REQUEST_CANCEL(%d, %d)", req.ServerChannelID, req.RequestID)
-	if err := c.cancelRequest(req.RequestID); err != nil {
+	if err := c.cancelRequestLocked(req.RequestID); err != nil {
 		ctxlog.L(ctx).Errorf("cancelling request %d: %v", req.RequestID, err)
 	}
 	return nil

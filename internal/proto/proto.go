@@ -203,8 +203,10 @@ type CreateChannelResponse struct {
 	AccessRights    pvdata.PVShort
 }
 
-// destroyChannelRequest
-// destroyChannelResponse
+// Destroy Channel
+type DestroyChannel struct {
+	ServerChannelID, ClientChannelID pvdata.PVInt
+}
 
 // Channel *
 
