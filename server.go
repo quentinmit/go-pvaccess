@@ -249,6 +249,8 @@ func (c *serverConn) handleServerOnePacket(ctx context.Context) error {
 	}
 	if f, ok := serverDispatch[msg.Header.MessageCommand]; ok {
 		return f(c, ctx, msg)
+	} else {
+		ctxlog.L(ctx).Errorf("no handler for command 0x%x", msg.Header.MessageCommand)
 	}
 	return nil
 }
