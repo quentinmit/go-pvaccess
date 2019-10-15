@@ -1105,6 +1105,9 @@ func (f FieldDesc) createZero() (PVField, error) {
 			if len(name) > 0 {
 				name = strings.ToUpper(name[0:1]) + name[1:]
 			}
+			if name[0] == '_' {
+				name = "X" + name
+			}
 			t := reflect.TypeOf(prototype)
 			if t.Kind() == reflect.Ptr {
 				t = t.Elem()
