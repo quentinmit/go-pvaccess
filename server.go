@@ -261,6 +261,7 @@ var serverDispatch = map[pvdata.PVByte]func(c *serverConn, ctx context.Context, 
 	proto.APP_CHANNEL_DESTROY:       (*serverConn).handleChannelDestroy,
 	proto.APP_CHANNEL_GET:           (*serverConn).handleChannelGet,
 	proto.APP_CHANNEL_RPC:           (*serverConn).handleChannelRPC,
+	proto.APP_CHANNEL_MONITOR:       (*serverConn).handleChannelMonitor,
 	proto.APP_REQUEST_CANCEL:        (*serverConn).handleRequestCancelDestroy,
 	proto.APP_REQUEST_DESTROY:       (*serverConn).handleRequestCancelDestroy,
 	proto.APP_SEARCH_REQUEST:        (*serverConn).handleSearchRequest,
@@ -355,7 +356,7 @@ func (c *serverConn) handleChannelGet(ctx context.Context, msg *connection.Messa
 		defer func() {
 			if err != nil {
 				ctxlog.L(ctx).Warnf("Channel Get failed: %v", err)
-				err = c.SendApp(ctx, proto.APP_CHANNEL_RPC, &proto.ChannelResponseError{
+				err = c.SendApp(ctx, proto.APP_CHANNEL_GET, &proto.ChannelResponseError{
 					RequestID:  req.RequestID,
 					Subcommand: req.Subcommand,
 					Status:     errorToStatus(err),
@@ -455,6 +456,59 @@ func (c *serverConn) handleChannelGet(ctx context.Context, msg *connection.Messa
 			})
 		}
 		return nil
+	})
+	return nil
+}
+func (c *serverConn) handleChannelMonitor(ctx context.Context, msg *connection.Message) error {
+	var req proto.ChannelMonitorRequest
+	if err := msg.Decode(&req); err != nil {
+		return err
+	}
+	ctxlog.L(ctx).Debugf("CHANNEL_MONITOR(%#v)", req)
+	c.g.Go(func() (err error) {
+		defer func() {
+			if err != nil {
+				ctxlog.L(ctx).Warnf("Channel Monitor failed: %v", err)
+				err = c.SendApp(ctx, proto.APP_CHANNEL_MONITOR, &proto.ChannelResponseError{
+					RequestID:  req.RequestID,
+					Subcommand: pvdata.PVByte(req.Subcommand),
+					Status:     errorToStatus(err),
+				})
+			}
+		}()
+		channel, err := c.getChannel(ctx, req.ServerChannelID)
+		if err != nil {
+			return err
+		}
+		ctx = ctxlog.WithFields(ctx, ctxlog.Fields{
+			"channel":    channel.Name(),
+			"channel_id": req.ServerChannelID,
+			"request_id": req.RequestID,
+		})
+		if req.Subcommand&proto.CHANNEL_MONITOR_INIT == proto.CHANNEL_MONITOR_INIT {
+			args, ok := req.PVRequest.Data.(pvdata.PVStructure)
+			if !ok {
+				return fmt.Errorf("Monitor arguments were of type %T, expected PVStructure", req.PVRequest.Data)
+			}
+			ctxlog.L(ctx).Printf("received request to init channel monitor with body %v", args)
+			// TODO: Parse args to select output data
+			// TODO: Use NFree, QueueSize to initialize pipeline support
+			return fmt.Errorf("channel %q (ID %x) does not support Monitor", channel.Name(), req.ServerChannelID)
+		}
+		ctxlog.L(ctx).Printf("received request on existing monitor")
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		r := c.requests[req.RequestID]
+		if r.status != READY {
+			return pvdata.PVStatus{
+				Type:    pvdata.PVStatus_ERROR,
+				Message: pvdata.PVString("request not READY"),
+			}
+		}
+		return fmt.Errorf("monitor unimplemented")
+		// TODO: if CHANNEL_MONITOR_PIPELINE_SUPPORT, add NFree to window (what to do with QueueSize?)
+		// TODO: if CHANNEL_MONITOR_SUBSCRIPTION, set running to r.Subcommand & CHANNEL_MONITOR_SUBSCRIPTION_RUN
+		// TODO: if CHANNEL_MONITOR_TERMINATE, destroy request
 	})
 	return nil
 }

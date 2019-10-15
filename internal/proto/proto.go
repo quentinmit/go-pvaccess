@@ -317,6 +317,78 @@ type ChannelRPCResponse struct {
 	PVResponseData pvdata.PVAny
 }
 
+// Channel Monitor
+
+// Channel Monitor subcommand flags
+const (
+	CHANNEL_MONITOR_INIT             = 0x08
+	CHANNEL_MONITOR_PIPELINE_SUPPORT = 0x80
+	CHANNEL_MONITOR_SUBSCRIPTION     = 0x04
+	CHANNEL_MONITOR_SUBSCRIPTION_RUN = 0x40
+	CHANNEL_MONITOR_TERMINATE        = 0x10
+)
+
+type ChannelMonitorRequest struct {
+	ServerChannelID pvdata.PVInt
+	RequestID       pvdata.PVInt
+	Subcommand      pvdata.PVUByte
+	// PVRequest is only present if CHANNEL_MONITOR_INIT
+	PVRequest pvdata.PVAny
+	// NFree is only present if CHANNEL_MONITOR_PIPELINE_SUPPORT
+	NFree pvdata.PVInt
+	// QueueSize is only present if CHANNEL_MONITOR_PIPELINE_SUPPORT
+	QueueSize pvdata.PVInt
+}
+
+func (r ChannelMonitorRequest) PVEncode(s *pvdata.EncoderState) error {
+	if err := pvdata.Encode(s, &r.ServerChannelID, &r.RequestID, &r.Subcommand); err != nil {
+		return err
+	}
+	if r.Subcommand&CHANNEL_MONITOR_INIT == CHANNEL_MONITOR_INIT {
+		if err := pvdata.Encode(s, &r.PVRequest); err != nil {
+			return err
+		}
+	}
+	if r.Subcommand&CHANNEL_MONITOR_PIPELINE_SUPPORT == CHANNEL_MONITOR_PIPELINE_SUPPORT {
+		if err := pvdata.Encode(s, &r.NFree, &r.QueueSize); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (r *ChannelMonitorRequest) PVDecode(s *pvdata.DecoderState) error {
+	if err := pvdata.Decode(s, &r.ServerChannelID, &r.RequestID, &r.Subcommand); err != nil {
+		return err
+	}
+	if r.Subcommand&CHANNEL_MONITOR_INIT == CHANNEL_MONITOR_INIT {
+		if err := pvdata.Decode(s, &r.PVRequest); err != nil {
+			return err
+		}
+	}
+	if r.Subcommand&CHANNEL_MONITOR_PIPELINE_SUPPORT == CHANNEL_MONITOR_PIPELINE_SUPPORT {
+		if err := pvdata.Decode(s, &r.NFree, &r.QueueSize); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type ChannelMonitorResponseInit struct {
+	RequestID     pvdata.PVInt
+	Subcommand    pvdata.PVByte
+	Status        pvdata.PVStatus `pvaccess:",breakonerror"`
+	PVStructureIF pvdata.FieldDesc
+}
+type ChannelMonitorResponse struct {
+	RequestID  pvdata.PVInt
+	Subcommand pvdata.PVByte
+	Status     pvdata.PVStatus
+	// Value is the partial structure in the response.
+	// On decode, Value.Value needs to be prepopulated with the struct to decode into.
+	Value         pvdata.PVStructureDiff
+	OverrunBitSet pvdata.PVBitSet
+}
+
 // Cancel Request and Destroy Request
 type CancelDestroyRequest struct {
 	ServerChannelID pvdata.PVInt
