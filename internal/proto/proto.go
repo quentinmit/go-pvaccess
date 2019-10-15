@@ -280,7 +280,6 @@ type ChannelGetResponse struct {
 // channelPutArrayResponse
 // channelSetLengthRequest
 // channelSetLengthResponse
-// destroyRequest
 // channelProcessRequestInit
 // channelProcessResponseInit
 // channelProcessRequest
@@ -316,7 +315,11 @@ type ChannelRPCResponse struct {
 	PVResponseData pvdata.PVAny
 }
 
-// cancelRequest
+// Cancel Request and Destroy Request
+type CancelDestroyRequest struct {
+	ServerChannelID pvdata.PVInt
+	RequestID       pvdata.PVInt
+}
 
 // Origin Tag
 type OriginTag struct {

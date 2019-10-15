@@ -157,6 +157,39 @@ func (c *serverConn) addRequest(id pvdata.PVInt, r *request) error {
 	return nil
 }
 
+func (c *serverConn) cancelRequest(id pvdata.PVInt) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if existing, ok := c.requests[id]; ok {
+		if existing.status < CANCELLED {
+			existing.status = CANCELLED
+		}
+		if existing.cancel != nil {
+			existing.cancel()
+			existing.cancel = nil
+		}
+		return nil
+	}
+	return fmt.Errorf("unknown request %d", id)
+}
+
+func (c *serverConn) destroyRequest(id pvdata.PVInt) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if existing, ok := c.requests[id]; ok {
+		if existing.status < DESTROYED {
+			existing.status = DESTROYED
+		}
+		if existing.cancel != nil {
+			existing.cancel()
+			existing.cancel = nil
+		}
+		delete(c.requests, id)
+		return nil
+	}
+	return fmt.Errorf("unknown request %d", id)
+}
+
 func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
 	c := connection.New(conn, proto.FLAG_FROM_SERVER)
 	return &serverConn{
@@ -229,6 +262,8 @@ var serverDispatch = map[pvdata.PVByte]func(c *serverConn, ctx context.Context, 
 	proto.APP_CHANNEL_CREATE:        (*serverConn).handleCreateChannelRequest,
 	proto.APP_CHANNEL_GET:           (*serverConn).handleChannelGet,
 	proto.APP_CHANNEL_RPC:           (*serverConn).handleChannelRPC,
+	proto.APP_REQUEST_CANCEL:        (*serverConn).handleRequestCancelDestroy,
+	proto.APP_REQUEST_DESTROY:       (*serverConn).handleRequestCancelDestroy,
 	proto.APP_SEARCH_REQUEST:        (*serverConn).handleSearchRequest,
 }
 
@@ -502,6 +537,25 @@ func (c *serverConn) handleChannelRPCBody(ctx context.Context, req proto.Channel
 		})
 		return nil
 	}
+}
+
+func (c *serverConn) handleRequestCancelDestroy(ctx context.Context, msg *connection.Message) error {
+	var req proto.CancelDestroyRequest
+	if err := msg.Decode(&req); err != nil {
+		return err
+	}
+	if msg.Header.MessageCommand == proto.APP_REQUEST_DESTROY {
+		ctxlog.L(ctx).Infof("REQUEST_DESTROY(%d, %d)", req.ServerChannelID, req.RequestID)
+		if err := c.destroyRequest(req.RequestID); err != nil {
+			ctxlog.L(ctx).Errorf("destroying request %d: %v", req.RequestID, err)
+		}
+		return nil
+	}
+	ctxlog.L(ctx).Infof("REQUEST_CANCEL(%d, %d)", req.ServerChannelID, req.RequestID)
+	if err := c.cancelRequest(req.RequestID); err != nil {
+		ctxlog.L(ctx).Errorf("cancelling request %d: %v", req.RequestID, err)
+	}
+	return nil
 }
 
 func (c *serverConn) handleSearchRequest(ctx context.Context, msg *connection.Message) error {
