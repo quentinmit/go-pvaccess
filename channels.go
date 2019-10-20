@@ -19,6 +19,8 @@ type ChannelGetCreator = types.ChannelGetCreator
 type ChannelGeter = types.ChannelGeter
 type ChannelRPCCreator = types.ChannelRPCCreator
 type ChannelRPCer = types.ChannelRPCer
+type ChannelMonitorCreator = types.ChannelMonitorCreator
+type Nexter = types.Nexter
 
 func (conn *serverConn) createChannel(ctx context.Context, channelID pvdata.PVInt, name string) (Channel, error) {
 	conn.mu.Lock()

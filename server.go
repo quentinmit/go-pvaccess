@@ -13,6 +13,7 @@ import (
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
 	"github.com/quentinmit/go-pvaccess/internal/proto"
 	"github.com/quentinmit/go-pvaccess/internal/search"
+	"github.com/quentinmit/go-pvaccess/internal/server/monitor"
 	"github.com/quentinmit/go-pvaccess/internal/server/status"
 	"github.com/quentinmit/go-pvaccess/pvdata"
 	"golang.org/x/sync/errgroup"
@@ -492,8 +493,49 @@ func (c *serverConn) handleChannelMonitor(ctx context.Context, msg *connection.M
 			}
 			ctxlog.L(ctx).Printf("received request to init channel monitor with body %v", args)
 			// TODO: Parse args to select output data
-			// TODO: Use NFree, QueueSize to initialize pipeline support
-			return fmt.Errorf("channel %q (ID %x) does not support Monitor", channel.Name(), req.ServerChannelID)
+			var nexter Nexter
+			if nextc, ok := channel.(ChannelMonitorCreator); ok {
+				nexter, err = nextc.CreateChannelMonitor(ctx, args)
+				if err != nil {
+					return err
+				}
+			} else {
+				return fmt.Errorf("channel %q (ID %x) does not support Monitor", channel.Name(), req.ServerChannelID)
+			}
+			value, err := nexter.Next(ctx)
+			if err != nil {
+				return err
+			}
+			m := monitor.New(ctx, args, nexter, func(value interface{}) {
+				c.SendApp(ctx, proto.APP_CHANNEL_MONITOR, &proto.ChannelMonitorResponse{
+					RequestID: req.RequestID,
+					Value: pvdata.PVStructureDiff{
+						Value: value,
+					},
+				})
+			})
+			m.Ack(ctx, int(req.NFree))
+			// TODO: Use QueueSize to initialize pipeline support
+			if err := c.addRequest(req.RequestID, &request{doer: m, status: READY}); err != nil {
+				return err
+			}
+			pvs, err := pvdata.NewPVStructure(value)
+			if err != nil {
+				return err
+			}
+			fd, err := pvs.FieldDesc()
+			if err != nil {
+				return err
+			}
+			if err := c.SendApp(ctx, proto.APP_CHANNEL_MONITOR, &proto.ChannelMonitorResponseInit{
+				RequestID:     req.RequestID,
+				Subcommand:    proto.CHANNEL_MONITOR_INIT,
+				PVStructureIF: fd,
+			}); err != nil {
+				return err
+			}
+			m.Send(ctx, value)
+			return nil
 		}
 		ctxlog.L(ctx).Printf("received request on existing monitor")
 		c.mu.Lock()
@@ -505,10 +547,29 @@ func (c *serverConn) handleChannelMonitor(ctx context.Context, msg *connection.M
 				Message: pvdata.PVString("request not READY"),
 			}
 		}
-		return fmt.Errorf("monitor unimplemented")
-		// TODO: if CHANNEL_MONITOR_PIPELINE_SUPPORT, add NFree to window (what to do with QueueSize?)
-		// TODO: if CHANNEL_MONITOR_SUBSCRIPTION, set running to r.Subcommand & CHANNEL_MONITOR_SUBSCRIPTION_RUN
-		// TODO: if CHANNEL_MONITOR_TERMINATE, destroy request
+		m, ok := r.doer.(*monitor.Monitor)
+		if !ok {
+			return errors.New("request not for monitor")
+		}
+		// If CHANNEL_MONITOR_PIPELINE_SUPPORT, add NFree to window (what to do with QueueSize?)
+		if req.Subcommand&proto.CHANNEL_MONITOR_PIPELINE_SUPPORT == proto.CHANNEL_MONITOR_PIPELINE_SUPPORT {
+			m.Ack(ctx, int(req.NFree))
+		}
+		// If CHANNEL_MONITOR_SUBSCRIPTION, set running to r.Subcommand & CHANNEL_MONITOR_SUBSCRIPTION_RUN
+		if req.Subcommand&proto.CHANNEL_MONITOR_SUBSCRIPTION == proto.CHANNEL_MONITOR_SUBSCRIPTION {
+			if req.Subcommand&proto.CHANNEL_MONITOR_SUBSCRIPTION_RUN == proto.CHANNEL_MONITOR_SUBSCRIPTION_RUN {
+				m.Start(ctx)
+			} else {
+				m.Stop(ctx)
+			}
+		}
+		// If CHANNEL_MONITOR_TERMINATE, destroy request
+		if req.Subcommand&proto.CHANNEL_MONITOR_TERMINATE == proto.CHANNEL_MONITOR_TERMINATE {
+			if err := m.Terminate(ctx); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	return nil
 }

@@ -659,6 +659,20 @@ func (v PVStructure) Field(name string) PVField {
 	return nil
 }
 
+func (v PVStructure) SubField(name ...string) PVField {
+	field := v.Field(name[0])
+	if field != nil {
+		if len(name) > 1 {
+			if s, ok := field.(*PVStructure); ok {
+				return s.SubField(name[1:]...)
+			}
+		} else {
+			return field
+		}
+	}
+	return nil
+}
+
 type PVStructureDiff struct {
 	ChangedBitSet PVBitSet
 	Value         interface{}
@@ -1130,4 +1144,31 @@ func (f FieldDesc) createZero() (PVField, error) {
 		return pvs, nil
 	}
 	return nil, fmt.Errorf("don't know how to create zero value for %#v", f)
+}
+
+func BoolValue(x interface{}) (bool, bool) {
+	i, ok := IntValue(x)
+	if ok {
+		return i != 0, true
+	}
+	return false, false
+}
+
+func IntValue(x interface{}) (int, bool) {
+	v := reflect.ValueOf(x)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(v.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(v.Uint()), true
+	case reflect.Bool:
+		if v.Bool() {
+			return 1, true
+		}
+		return 0, true
+	}
+	return 0, false
 }

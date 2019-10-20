@@ -48,3 +48,11 @@ type ChannelRPCCreator interface {
 type ChannelRPCer interface {
 	ChannelRPC(ctx context.Context, req pvdata.PVStructure) (response interface{}, err error)
 }
+
+type ChannelMonitorCreator interface {
+	CreateChannelMonitor(ctx context.Context, req pvdata.PVStructure) (Nexter, error)
+}
+
+type Nexter interface {
+	Next(ctx context.Context) (interface{}, error)
+}
