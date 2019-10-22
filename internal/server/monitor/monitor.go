@@ -36,6 +36,10 @@ func New(ctx context.Context, request pvdata.PVStructure, nexter types.Nexter, s
 
 func (m *Monitor) Watch(ctx context.Context, nexter types.Nexter) error {
 	for {
+		// Check if context is canceled in case Next doesn't use context.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		value, err := nexter.Next(ctx)
 		if err != nil {
 			return err
