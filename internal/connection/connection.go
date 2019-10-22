@@ -132,10 +132,12 @@ func (c *Connection) SendApp(ctx context.Context, messageCommand pvdata.PVByte, 
 		MessageCommand: messageCommand,
 		PayloadSize:    pvdata.PVInt(len(bytes)),
 	}
-	ctxlog.L(ctx).WithFields(ctxlog.Fields{
+	l := ctxlog.L(ctx).WithFields(ctxlog.Fields{
 		"command":      messageCommand,
 		"payload_size": len(bytes),
-	}).Debug("sending app message")
+	})
+	l.Debug("sending app message")
+	l.Tracef("app message body = %x", bytes)
 	if err := h.PVEncode(c.encoderState); err != nil {
 		return err
 	}

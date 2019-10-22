@@ -42,7 +42,7 @@ func main() {
 	s.DisableSearch = *disableSearch
 
 	c := pvaccess.NewSimpleChannel("gopvtest")
-	value := pvdata.PVLong(1)
+	value := pvdata.PVLong(256)
 	c.Set(&value)
 	s.AddChannelProvider(c)
 	go func() {

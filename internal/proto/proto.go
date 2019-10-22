@@ -382,7 +382,6 @@ type ChannelMonitorResponseInit struct {
 type ChannelMonitorResponse struct {
 	RequestID  pvdata.PVInt
 	Subcommand pvdata.PVByte
-	Status     pvdata.PVStatus
 	// Value is the partial structure in the response.
 	// On decode, Value.Value needs to be prepopulated with the struct to decode into.
 	Value         pvdata.PVStructureDiff
