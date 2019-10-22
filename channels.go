@@ -74,6 +74,8 @@ type SimpleChannel struct {
 
 	mu    sync.Mutex
 	value interface{}
+	seq   int
+	cond  sync.Cond
 }
 
 func (c *SimpleChannel) Name() string {
@@ -93,7 +95,8 @@ func (c *SimpleChannel) Set(value interface{}) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.value = value
-	// TODO: Notify watchers
+	c.seq++
+	c.cond.Broadcast()
 }
 
 func (c *SimpleChannel) CreateChannel(ctx context.Context, name string) (Channel, error) {
@@ -104,6 +107,36 @@ func (c *SimpleChannel) CreateChannel(ctx context.Context, name string) (Channel
 }
 func (c *SimpleChannel) ChannelList(ctx context.Context) ([]string, error) {
 	return []string{c.Name()}, nil
+}
+
+type watch struct {
+	c   *SimpleChannel
+	seq int
+}
+
+func (w *watch) Next(ctx context.Context) (interface{}, error) {
+	w.c.mu.Lock()
+	defer w.c.mu.Unlock()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		<-ctx.Done()
+		w.c.cond.Broadcast()
+	}()
+	for w.seq >= w.c.seq {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		w.c.cond.Wait()
+	}
+	w.seq = w.c.seq
+	return &bareScalar{
+		Value: w.c.value,
+	}, nil
+}
+
+func (c *SimpleChannel) CreateChannelMonitor(ctx context.Context, req pvdata.PVStructure) (types.Nexter, error) {
+	return &watch{c, -1}, nil
 }
 
 type bareScalar struct {
