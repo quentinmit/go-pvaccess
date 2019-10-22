@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -40,10 +41,16 @@ func main() {
 	}
 	s.DisableSearch = *disableSearch
 
-	c := &pvaccess.SimpleChannel{ChannelName: "gopvtest"}
+	c := pvaccess.NewSimpleChannel("gopvtest")
 	value := pvdata.PVLong(1)
 	c.Set(&value)
 	s.AddChannelProvider(c)
+	go func() {
+		for _ = range time.Tick(time.Second) {
+			value++
+			c.Set(&value)
+		}
+	}()
 
 	s.ListenAndServe(ctx)
 }

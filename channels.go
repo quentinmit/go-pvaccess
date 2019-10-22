@@ -70,16 +70,24 @@ func (c *serverConn) destroyChannel(id pvdata.PVInt) error {
 }
 
 type SimpleChannel struct {
-	ChannelName string
+	name string
 
 	mu    sync.Mutex
 	value interface{}
 	seq   int
-	cond  sync.Cond
+	cond  *sync.Cond
+}
+
+func NewSimpleChannel(name string) *SimpleChannel {
+	c := &SimpleChannel{
+		name: name,
+	}
+	c.cond = sync.NewCond(&c.mu)
+	return c
 }
 
 func (c *SimpleChannel) Name() string {
-	return c.ChannelName
+	return c.name
 }
 
 // Get returns the current value in c.

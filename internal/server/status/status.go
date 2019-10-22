@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"runtime"
 	"strings"
@@ -40,12 +41,12 @@ func (NTScalarArray) TypeID() string {
 
 func (c *Channel) ChannelRPC(ctx context.Context, args pvdata.PVStructure) (interface{}, error) {
 	if strings.HasPrefix(args.ID, "epics:nt/NTURI:1.") {
-		if q, ok := args.Field("query").(*pvdata.PVStructure); ok {
-			args = *q
+		if q, ok := args.Field("query").(pvdata.PVStructure); ok {
+			args = q
 		} else {
 			return struct{}{}, pvdata.PVStatus{
 				Type:    pvdata.PVStatus_ERROR,
-				Message: pvdata.PVString("invalid argument"),
+				Message: pvdata.PVString("invalid argument (missing query)"),
 			}
 		}
 	}
@@ -101,6 +102,6 @@ func (c *Channel) ChannelRPC(ctx context.Context, args pvdata.PVStructure) (inte
 
 	return &struct{}{}, pvdata.PVStatus{
 		Type:    pvdata.PVStatus_ERROR,
-		Message: pvdata.PVString("invalid argument"),
+		Message: pvdata.PVString(fmt.Sprintf("invalid argument (unknown op %q)", op)),
 	}
 }
