@@ -198,7 +198,6 @@ func (srv *Server) newConn(conn io.ReadWriter) *serverConn {
 }
 
 func (srv *Server) handleConnection(ctx context.Context, conn net.Conn) {
-	defer conn.Close()
 	ctx = ctxlog.WithFields(ctx, ctxlog.Fields{
 		"local_addr":  srv.ln.Addr(),
 		"remote_addr": conn.RemoteAddr(),
@@ -207,6 +206,11 @@ func (srv *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	c := srv.newConn(conn)
 	g, ctx := errgroup.WithContext(ctx)
 	c.g = g
+	g.Go(func() error {
+		<-ctx.Done()
+		// TODO: Gracefully destroy requests and channels before closing?
+		return conn.Close()
+	})
 	g.Go(func() error {
 		ctxlog.L(ctx).Infof("new connection")
 		return c.serve(ctx)
