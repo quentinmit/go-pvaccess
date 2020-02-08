@@ -10,11 +10,12 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
-	"github.com/quentinmit/go-pvaccess/internal/proto"
-	"github.com/quentinmit/go-pvaccess/pvdata"
+	"go-pvaccess/internal/ctxlog"
+	"go-pvaccess/internal/proto"
+	"go-pvaccess/pvdata"
 )
 
+// Connection
 type Connection struct {
 	Version   pvdata.PVByte
 	Direction pvdata.PVUByte

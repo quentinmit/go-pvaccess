@@ -4,10 +4,11 @@ import (
 	"context"
 	"sync"
 
-	"github.com/quentinmit/go-pvaccess/internal/server/types"
-	"github.com/quentinmit/go-pvaccess/pvdata"
+	"go-pvaccess/internal/server/types"
+	"go-pvaccess/pvdata"
 )
 
+// Monitor 
 type Monitor struct {
 	sendValue  func(interface{})
 	mu         sync.Mutex

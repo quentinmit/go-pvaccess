@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/quentinmit/go-pvaccess/pvdata"
+	"go-pvaccess/pvdata"
 )
 
 // TODO: Messages MUST be aligned on a 64-bit boundary (Pad with zeros???)

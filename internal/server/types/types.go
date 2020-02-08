@@ -3,7 +3,7 @@ package types
 import (
 	"context"
 
-	"github.com/quentinmit/go-pvaccess/pvdata"
+	"go-pvaccess/pvdata"
 )
 
 // ChannelProvider represents the minimal channel provider.

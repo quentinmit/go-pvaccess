@@ -3,11 +3,11 @@ package search
 import (
 	"context"
 
-	"github.com/quentinmit/go-pvaccess/internal/connection"
-	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
-	"github.com/quentinmit/go-pvaccess/internal/proto"
-	"github.com/quentinmit/go-pvaccess/internal/server/types"
-	"github.com/quentinmit/go-pvaccess/pvdata"
+	"go-pvaccess/internal/connection"
+	"go-pvaccess/internal/ctxlog"
+	"go-pvaccess/internal/proto"
+	"go-pvaccess/internal/server/types"
+	"go-pvaccess/pvdata"
 )
 
 func (s *Server) Search(ctx context.Context, c *connection.Connection, req proto.SearchRequest) error {

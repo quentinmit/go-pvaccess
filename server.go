@@ -9,13 +9,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/quentinmit/go-pvaccess/internal/connection"
-	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
-	"github.com/quentinmit/go-pvaccess/internal/proto"
-	"github.com/quentinmit/go-pvaccess/internal/search"
-	"github.com/quentinmit/go-pvaccess/internal/server/monitor"
-	"github.com/quentinmit/go-pvaccess/internal/server/status"
-	"github.com/quentinmit/go-pvaccess/pvdata"
+	"go-pvaccess/internal/connection"
+	"go-pvaccess/internal/ctxlog"
+	"go-pvaccess/internal/proto"
+	"go-pvaccess/internal/search"
+	"go-pvaccess/internal/server/monitor"
+	"go-pvaccess/internal/server/status"
+	"go-pvaccess/pvdata"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -231,7 +232,7 @@ func (c *serverConn) serve(ctx context.Context) error {
 	req := proto.ConnectionValidationRequest{
 		ServerReceiveBufferSize:            pvdata.PVInt(c.ReceiveBufferSize()),
 		ServerIntrospectionRegistryMaxSize: 0x7fff,
-		AuthNZ: []string{"anonymous"},
+		AuthNZ:                             []string{"anonymous"},
 	}
 	c.SendApp(ctx, proto.APP_CONNECTION_VALIDATION, &req)
 
