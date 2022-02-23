@@ -50,7 +50,7 @@ func (v *PVAccessHeader) PVDecode(s *pvdata.DecoderState) error {
 	}
 	// Need to decode flags before decoding PayloadSize
 	if !v.ForceByteOrder {
-		if v.Flags&0x70 == 0x70 {
+		if v.Flags&0x80 == 0x80 {
 			s.ByteOrder = binary.BigEndian
 		} else {
 			s.ByteOrder = binary.LittleEndian
