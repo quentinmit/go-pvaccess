@@ -396,6 +396,19 @@ func (a PVArray) PVEncode(s *EncoderState) error {
 	for i := 0; i < a.v.Len(); i++ {
 		item := a.v.Index(i).Addr()
 		pvf := valueToPVField(item)
+		if pvs, ok := pvf.(PVStructure); ok {
+			if pvs.v.Type().Name() != "StructFieldDesc" {
+				if pvf == nil {
+					if err := PVByte(0).PVEncode(s); err != nil {
+						return err
+					}
+					continue
+				}
+				if err := PVByte(1).PVEncode(s); err != nil {
+					return err
+				}
+			}
+		}
 		if pvf == nil {
 			return fmt.Errorf("don't know how to encode %#v", item.Interface())
 		}
@@ -753,6 +766,12 @@ func (v *PVAny) PVDecode(s *DecoderState) error {
 	return Decode(s, v.Data)
 }
 
+func (v PVAny) FieldDesc() (FieldDesc, error) {
+	return FieldDesc{
+		TypeCode: VARIANT_UNION,
+	}, nil
+}
+
 // BitSet type
 type PVBitSet struct {
 	Present []bool
@@ -955,6 +974,7 @@ const (
 	BOUNDED_STRING = 0x86
 	STRUCT         = 0x80
 	UNION          = 0x81
+	VARIANT_UNION  = 0x82
 	STRUCT_ARRAY   = STRUCT | VARIABLE_ARRAY
 	UNION_ARRAY    = UNION | VARIABLE_ARRAY
 )
@@ -985,7 +1005,7 @@ func (f *FieldDesc) PVEncode(s *EncoderState) error {
 	if err := s.Buf.WriteByte(f.TypeCode); err != nil {
 		return err
 	}
-	if f.TypeCode == NULL_TYPE_CODE {
+	if f.TypeCode == NULL_TYPE_CODE || f.TypeCode == VARIANT_UNION {
 		return nil
 	}
 	if f.TypeCode&0x10 == 0x10 || f.TypeCode == BOUNDED_STRING {
@@ -993,12 +1013,17 @@ func (f *FieldDesc) PVEncode(s *EncoderState) error {
 			return err
 		}
 	}
-	if f.TypeCode == STRUCT || f.TypeCode == UNION {
+	if f.TypeCode == STRUCT_ARRAY {
+		s.Buf.WriteByte(STRUCT)
+	}
+	if f.TypeCode == UNION_ARRAY {
+		s.Buf.WriteByte(UNION)
+	}
+	if f.TypeCode&STRUCT == STRUCT || f.TypeCode&UNION == UNION {
 		if err := Encode(s, &f.StructType, f.Fields); err != nil {
 			return err
 		}
 	}
-	// TODO: Serialize STRUCT_ARRAY and UNION_ARRAY types
 	return nil
 }
 
@@ -1010,6 +1035,8 @@ func (f *FieldDesc) PVDecode(s *DecoderState) error {
 	f.TypeCode = typeCode
 	switch f.TypeCode {
 	case NULL_TYPE_CODE:
+		return nil
+	case VARIANT_UNION:
 		return nil
 	case ONLY_ID_TYPE_CODE:
 		// TODO: Look up in DecoderState
