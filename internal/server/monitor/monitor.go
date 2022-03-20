@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/quentinmit/go-pvaccess/internal/server/types"
 	"github.com/quentinmit/go-pvaccess/pvdata"
+	"github.com/quentinmit/go-pvaccess/types"
 )
 
 type Monitor struct {
