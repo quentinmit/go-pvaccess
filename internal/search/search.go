@@ -6,8 +6,8 @@ import (
 	"github.com/quentinmit/go-pvaccess/internal/connection"
 	"github.com/quentinmit/go-pvaccess/internal/ctxlog"
 	"github.com/quentinmit/go-pvaccess/internal/proto"
-	"github.com/quentinmit/go-pvaccess/internal/server/types"
 	"github.com/quentinmit/go-pvaccess/pvdata"
+	"github.com/quentinmit/go-pvaccess/types"
 )
 
 func (s *Server) Search(ctx context.Context, c *connection.Connection, req proto.SearchRequest) error {
